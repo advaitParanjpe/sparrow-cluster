@@ -5,3 +5,4 @@
 3. **Resolved for this interface — memory error:** the audited core has no error channel, so invalid accesses return zero. A future core contract change would require a new audit rather than silently changing this behavior.
 4. **Resolved in Milestone 2 — L1I insertion:** private L1I refills use four ordinary word transactions through the existing adapters and can interleave with other cores and DMEM. L1I is intentionally non-coherent; L1D and snooping remain later work.
 5. **Open for later runtime work — toolchain/startup ABI:** the current test image is hand-encoded RV32I. A production linker/startup ABI requires an approved toolchain decision.
+6. **Deliberate Milestone 3 limitation — non-coherent L1D:** cacheable writable data must be private or block-disjoint. Shared flags, results, and completions use uncached apertures; no flush is provided or used as a coherence substitute.

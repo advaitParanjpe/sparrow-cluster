@@ -1,3 +1,3 @@
 # Performance plan
 
-Milestone 2 exposes per-core L1I access, hit, miss, refill-word, and miss-stall-cycle counters as internal RTL signals. Accesses are accepted fetches, therefore accesses equal hits plus misses. The directed L1I test measures one cold miss/four refill words followed by three hits across a block, then conflict replacements. Later counters remain L1D dirty evictions, coherence traffic, bus occupancy, arbitration wait, and LR/SC attempts/failures.
+Milestone 3 exposes per-core L1D accepted accesses, loads, stores, hits, misses, load/store misses, refill words, dirty writeback words, dirty evictions, uncached accesses, and miss-stall cycles. The enforced equation is `accesses = hits + misses + uncached_accesses`. The directed test measures 12 refill words, four dirty writeback words, one dirty eviction, and two uncached accesses; coherence traffic remains later work.

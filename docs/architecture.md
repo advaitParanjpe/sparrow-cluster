@@ -1,9 +1,9 @@
 # Architecture
 
-Milestone 2 is a strongly ordered four-core system with one private blocking L1I per imported `rv32_core`. Each L1I accepts one audited IMEM request, returns hits locally, and holds a miss until four ordinary word reads complete. Its lower port is the IMEM port of the existing `core_adapter`; DMEM remains connected to the adapter unchanged. The adapter captures either one L1I refill word request or one DMEM request, then holds its metadata until exactly one response returns. Local round-robin starts with IMEM after reset and alternates after accepted work. A four-way global round-robin arbiter accepts one adapter request only when the controller is idle.
+Milestone 3 is a strongly ordered four-core system with private blocking L1I and L1D caches per imported `rv32_core`. L1D accepts one audited DMEM request, performs write-back/write-allocate cacheable accesses, and bypasses documented control apertures. Its lower port is the DMEM port of the existing `core_adapter`; the adapter serializes either L1I refill or L1D traffic and holds metadata until one response returns.
 
 ```text
-four rv32_core instances -> private L1I -> per-core IMEM/DMEM adapter -> 4-way RR -> controller -> one SRAM
+four rv32_core instances -> private L1I/L1D -> per-core adapter -> 4-way RR -> controller -> one SRAM
 ```
 
 Each refill may release arbitration between words, so L1I refill words from different cores and uncached DMEM work can interleave. `0x10000000` is a read-only core-local hart-ID aperture: a read returns the controller-recorded source ID. SRAM and the controller are otherwise shared.

@@ -15,9 +15,7 @@ module tb_m1_multicore;
     if (cycles == 12000) $fatal(1,"multicore completion timeout");
     for (hart=0; hart<4; hart=hart+1) begin
       if (word(32'h400+4*hart) !== 32'h234+hart) $fatal(1,"shared checksum hart %0d",hart);
-      if (word(32'h500+16*hart) !== hart) $fatal(1,"partition word hart %0d",hart);
-      if (dut.u_mem.mem[32'h504+16*hart] !== 8'h40+hart) $fatal(1,"partition byte hart %0d",hart);
-      if (word(32'h6f0-256*hart) !== hart) $fatal(1,"private stack hart %0d got %h",hart,word(32'h6f0-256*hart));
+      if (dut.l1d_hits[hart*64 +: 64] == 0 || dut.l1d_misses[hart*64 +: 64] == 0) $fatal(1,"L1D private-data activity hart %0d",hart);
     end
     if (word(32'h300) !== 32'h234 || word(32'h308) !== 1) $fatal(1,"single-writer initialization");
     for (hart=0; hart<4; hart=hart+1) begin

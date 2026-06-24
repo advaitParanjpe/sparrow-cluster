@@ -1,0 +1,7 @@
+# Snoopy bus protocol
+
+Only one transaction is active. Requesting L1D raises `bus_req` with command `BusRd`, `BusRdX`, `BusUpgr`, or writeback, block address, and requester ID. Round-robin arbitration grants one requester; grant is broadcast as the command and held until completion. Every snooper performs a tag/MSI lookup and returns hit, M-owner, and optional block-data-ready response in the snoop-response phase.
+
+For BusRd/BusRdX, an M owner is authoritative: it drives the block on the data phase, requester captures it, and SRAM is updated by the same intervention or immediately coupled writeback before completion. If no M owner responds, the controller fetches SRAM with parameterized fixed latency and broadcasts its data. BusUpgr has no data phase and completes after invalidation acknowledgements. Writeback writes SRAM then completes. Errors are broadcast to requester and terminate the transaction without installing unverified data; final core error mapping remains open.
+
+Reset cancels grants and forces cache state I; no transaction is emitted until reset releases. This fits Sparrow-V because its core side already supports held ready/valid and one outstanding DMEM operation. The coupled writeback policy is recommended: it preserves SRAM authority after intervention with a single visible transaction. A safer alternative is owner-to-requester transfer followed by a separately arbitrated writeback, but that leaves stale SRAM longer and complicates eviction/order proofs.

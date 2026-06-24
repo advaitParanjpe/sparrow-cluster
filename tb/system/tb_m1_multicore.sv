@@ -20,6 +20,10 @@ module tb_m1_multicore;
       if (word(32'h6f0-256*hart) !== hart) $fatal(1,"private stack hart %0d got %h",hart,word(32'h6f0-256*hart));
     end
     if (word(32'h300) !== 32'h234 || word(32'h308) !== 1) $fatal(1,"single-writer initialization");
+    for (hart=0; hart<4; hart=hart+1) begin
+      if (dut.l1_accesses[hart*64 +: 64] !== dut.l1_hits[hart*64 +: 64] + dut.l1_misses[hart*64 +: 64]) $fatal(1,"L1I counters hart %0d",hart);
+      if (dut.l1_hits[hart*64 +: 64] == 0 || dut.l1_refill_words[hart*64 +: 64] != 4*dut.l1_misses[hart*64 +: 64]) $fatal(1,"L1I refill accounting hart %0d",hart);
+    end
     $display("PASS multicore: 4 stack/ID, shared-read, partition-write, byte-write, and completion tests");
     $finish;
   end

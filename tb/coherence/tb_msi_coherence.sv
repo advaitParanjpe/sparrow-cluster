@@ -15,7 +15,7 @@ module tb_msi_coherence;
 
   genvar g;
   generate for(g=0; g<4; g=g+1) begin: caches
-    l1_data_cache u_l1d(.clk,.rst_n,.cpu_req_valid(cpu_v[g]),.cpu_req_ready(cpu_r[g]),.cpu_req_write(cpu_w[g]),.cpu_req_addr(cpu_a[g*32 +: 32]),.cpu_req_wdata(cpu_wd[g*32 +: 32]),.cpu_req_wstrb(cpu_ws[g*4 +: 4]),.cpu_resp_valid(cpu_rv[g]),.cpu_resp_ready(cpu_rr[g]),.cpu_resp_data(cpu_d[g*32 +: 32]),
+    l1_data_cache u_l1d(.clk,.rst_n,.cpu_req_valid(cpu_v[g]),.cpu_req_ready(cpu_r[g]),.cpu_req_write(cpu_w[g]),.cpu_req_addr(cpu_a[g*32 +: 32]),.cpu_req_wdata(cpu_wd[g*32 +: 32]),.cpu_req_wstrb(cpu_ws[g*4 +: 4]),.cpu_req_atomic(2'd0),.cpu_resp_valid(cpu_rv[g]),.cpu_resp_ready(cpu_rr[g]),.cpu_resp_data(cpu_d[g*32 +: 32]),
       .lower_req_valid(low_v[g]),.lower_req_ready(low_r[g]),.lower_req_write(low_w[g]),.lower_req_addr(low_a[g*32 +: 32]),.lower_req_wdata(low_wd[g*32 +: 32]),.lower_req_wstrb(low_ws[g*4 +: 4]),.lower_resp_valid(low_rv[g]),.lower_resp_ready(low_rr[g]),.lower_resp_data(low_d[g*32 +: 32]),
       .bus_req_valid(bus_v[g]),.bus_req_ready(bus_r[g]),.bus_req_cmd(bus_cmd[g*3 +: 3]),.bus_req_addr(bus_a[g*32 +: 32]),.bus_req_wb_data(bus_wb[g*128 +: 128]),.bus_req_wb_data_valid(bus_wbv[g]),.bus_resp_valid(bus_rv[g]),.bus_resp_ready(bus_rr[g]),.bus_resp_data(bus_d[g*128 +: 128]),.bus_resp_shared(bus_shared[g]),.bus_resp_modified(bus_mod[g]),.bus_resp_complete(bus_comp[g]),.bus_resp_error(bus_err[g]),
       .snoop_valid(sv[g]),.snoop_cmd(scmd),.snoop_addr(sa),.snoop_requester(sid),.snoop_other(sother[g]),.snoop_resp_valid(srv[g]),.snoop_resp_present(srp[g]),.snoop_resp_modified(srm[g]),.snoop_resp_data_valid(srd[g]),.snoop_resp_data(srdata[g*128 +: 128]),.snoop_resp_inv_ack(sra[g]),.msi_state_debug(msi_dbg[g*256 +: 256]),

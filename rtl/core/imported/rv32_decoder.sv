@@ -3,6 +3,7 @@ module rv32_decoder(
   output logic legal, output logic reg_write, output logic use_imm,
   output logic [1:0] result_sel, output sparrowv_scalar_pkg::alu_op_t alu_op,
   output sparrowv_scalar_pkg::mem_op_t mem_op, output sparrowv_scalar_pkg::mem_size_t mem_size,
+  output sparrowv_scalar_pkg::mem_atomic_t mem_atomic,
   output logic load_unsigned, output logic branch, output logic branch_unsigned,
   output logic [1:0] branch_kind, output logic jal, output logic jalr,
   output logic ecall, output logic ebreak
@@ -12,7 +13,7 @@ module rv32_decoder(
   always_comb begin
     opcode=instr[6:0]; funct3=instr[14:12]; funct7=instr[31:25];
     legal=1'b1; reg_write=1'b0; use_imm=1'b0; result_sel=2'd0; alu_op=ALU_ADD;
-    mem_op=MEM_NONE; mem_size=SZ_WORD; load_unsigned=1'b0; branch=1'b0; branch_unsigned=1'b0;
+    mem_op=MEM_NONE; mem_size=SZ_WORD; mem_atomic=MEM_ATOMIC_NONE; load_unsigned=1'b0; branch=1'b0; branch_unsigned=1'b0;
     branch_kind=2'd0; jal=1'b0; jalr=1'b0; ecall=1'b0; ebreak=1'b0;
     unique case(opcode)
       7'b0110111: begin reg_write=1'b1; result_sel=2'd2; end // LUI
@@ -54,6 +55,13 @@ module rv32_decoder(
           default: begin legal=1'b0; mem_op=MEM_NONE; end
         endcase
       end
+      7'b0101111: begin
+        if (funct3 == 3'b010 && instr[31:27] == 5'b00010 && rs2_is_zero(instr)) begin
+          reg_write=1'b1; result_sel=2'd0; use_imm=1'b0; mem_op=MEM_LOAD; mem_size=SZ_WORD; mem_atomic=MEM_ATOMIC_LR;
+        end else if (funct3 == 3'b010 && instr[31:27] == 5'b00011) begin
+          reg_write=1'b1; result_sel=2'd0; use_imm=1'b0; mem_op=MEM_STORE; mem_size=SZ_WORD; mem_atomic=MEM_ATOMIC_SC;
+        end else legal=1'b0;
+      end
       7'b0010011: begin
         reg_write=1'b1; use_imm=1'b1;
         unique case(funct3)
@@ -91,4 +99,7 @@ module rv32_decoder(
       default: legal=1'b0;
     endcase
   end
+  function automatic logic rs2_is_zero(input logic [31:0] i);
+    rs2_is_zero = (i[24:20] == 5'd0);
+  endfunction
 endmodule

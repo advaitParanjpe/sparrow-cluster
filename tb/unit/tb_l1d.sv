@@ -11,7 +11,7 @@ module tb_l1d;
   logic [63:0] tx,tx_brd,tx_brdx,tx_bup,tx_wb,tx_shared,tx_interv,sreads,swrites,acks,occupied,tx_perr,timeouts,waits;
   logic [7:0] mem[0:16383]; logic pending, pending_low; logic [31:0] pending_a,pending_wd; logic [3:0] pending_ws; logic pending_w; integer delay, requests, writes, i;
 
-  l1_data_cache dut(.clk,.rst_n,.cpu_req_valid(cpu_v),.cpu_req_ready(cpu_r),.cpu_req_write(cpu_w),.cpu_req_addr(cpu_a),.cpu_req_wdata(cpu_wd),.cpu_req_wstrb(cpu_ws),.cpu_resp_valid(cpu_rv),.cpu_resp_ready(cpu_rr),.cpu_resp_data(cpu_d),
+  l1_data_cache dut(.clk,.rst_n,.cpu_req_valid(cpu_v),.cpu_req_ready(cpu_r),.cpu_req_write(cpu_w),.cpu_req_addr(cpu_a),.cpu_req_wdata(cpu_wd),.cpu_req_wstrb(cpu_ws),.cpu_req_atomic(2'd0),.cpu_resp_valid(cpu_rv),.cpu_resp_ready(cpu_rr),.cpu_resp_data(cpu_d),
     .lower_req_valid(low_v),.lower_req_ready(low_r),.lower_req_write(low_w),.lower_req_addr(low_a),.lower_req_wdata(low_wd),.lower_req_wstrb(low_ws),.lower_resp_valid(low_rv),.lower_resp_ready(low_rr),.lower_resp_data(low_d),
     .bus_req_valid(bus_v),.bus_req_ready(bus_r),.bus_req_cmd(bus_cmd),.bus_req_addr(bus_a),.bus_req_wb_data(bus_wb),.bus_req_wb_data_valid(bus_wbv),.bus_resp_valid(bus_rv),.bus_resp_ready(bus_rr),.bus_resp_data(bus_d),.bus_resp_shared(bus_shared),.bus_resp_modified(bus_mod),.bus_resp_complete(bus_comp),.bus_resp_error(bus_err),
     .snoop_valid(sv),.snoop_cmd(scmd),.snoop_addr(sa),.snoop_requester(sid),.snoop_other(sother),.snoop_resp_valid(srv),.snoop_resp_present(srp),.snoop_resp_modified(srm),.snoop_resp_data_valid(srd),.snoop_resp_data(srdata),.snoop_resp_inv_ack(sra),.msi_state_debug(msi_dbg),

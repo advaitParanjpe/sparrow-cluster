@@ -7,3 +7,5 @@ Requests are block-aligned internally. `BUS_RD` and `BUS_RDX` return a 128-bit b
 For `BUS_RD` and `BUS_RDX`, a modified owner has priority over SRAM. The owner’s block is forwarded to the requester and written to SRAM by the same transaction. If no owner responds, the transport reads four ascending SRAM words. `BUS_RDX` and `BUS_UPGR` require peer invalidation acknowledgements; timeout raises the error path and increments protocol counters.
 
 The production top-level arbitrates the transport’s SRAM word port with the existing adapter path feeding L1I and uncached L1D traffic. Only one SRAM request is presented to the controller, and responses are routed back either to the coherence transport or to the recorded adapter source.
+
+LR/SC adds no new bus command. LR uses `BUS_RD` only on cache miss. Successful SC uses the ordinary store paths: no bus on local `M`, `BUS_UPGR` from local `S`, and no supported success from local `I`. Failed SC does not issue a coherence transaction.

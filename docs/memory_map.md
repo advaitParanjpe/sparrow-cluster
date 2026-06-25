@@ -14,4 +14,4 @@ Default SRAM is parameterized as 256 KiB at `0x00000000..0x0003ffff`; unmapped a
 | `0x0003fc00..0x0003ffff` | four 256-byte production stack regions, allocated downward |
 | `0x10000000` | read-only core-local hart ID |
 
-Milestone 5 makes ordinary mapped SRAM cacheable and coherent through MSI, except for the explicit uncached apertures above. Uncached accesses do not allocate and do not modify MSI metadata. The directed 4 KiB test configuration uses equivalent low test stacks at `0x6f0`, `0x5f0`, `0x4f0`, and `0x3f0`; they are non-overlapping.
+Milestone 6 makes ordinary mapped SRAM cacheable, coherent, and usable for LR/SC, except for the explicit uncached apertures above. Uncached accesses do not allocate and do not modify MSI metadata. LR to an uncached aperture does not establish a reservation, and SC to an uncached aperture fails without storing. The directed 4 KiB test configuration uses equivalent low test stacks at `0x6f0`, `0x5f0`, `0x4f0`, and `0x3f0`; they are non-overlapping.

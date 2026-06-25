@@ -6,3 +6,4 @@
 4. **Resolved in Milestone 2 — L1I insertion:** private L1I refills use four ordinary word transactions through the existing adapters and can interleave with other cores and DMEM. L1I is intentionally non-coherent; L1D and snooping remain later work.
 5. **Open for later runtime work — toolchain/startup ABI:** the current test image is hand-encoded RV32I. A production linker/startup ABI requires an approved toolchain decision.
 6. **Deliberate Milestone 3 limitation — non-coherent L1D:** cacheable writable data must be private or block-disjoint. Shared flags, results, and completions use uncached apertures; no flush is provided or used as a coherence substitute.
+7. **Milestone 4 integration boundary:** the transport is verified independently because connecting production L1D requests before MSI would expose incoherent writable data. Milestone 5 must integrate the existing serialized memory arbitration hierarchy without allowing two memory-side owners.

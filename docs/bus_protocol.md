@@ -1,5 +1,7 @@
 # Snoopy bus protocol
 
+The implemented `snoopy_coherence_transport` accepts four packed requester ports. It captures command/address/data on acceptance, broadcasts to the three non-requesters during snoop collection, then selects owner data over SRAM. SRAM block reads and writes are four ordered 32-bit operations. `BUS_RDX`/`BUS_UPGR` require peer acknowledgements; `WRITEBACK` bypasses snooping.
+
 Only one transaction is active. Requesting L1D raises `bus_req` with command `BusRd`, `BusRdX`, `BusUpgr`, or writeback, block address, and requester ID. Round-robin arbitration grants one requester; grant is broadcast as the command and held until completion. Every snooper performs a tag/MSI lookup and returns hit, M-owner, and optional block-data-ready response in the snoop-response phase.
 
 For BusRd/BusRdX, an M owner is authoritative: it drives the block on the data phase, requester captures it, and SRAM is updated by the same intervention or immediately coupled writeback before completion. If no M owner responds, the controller fetches SRAM with parameterized fixed latency and broadcasts its data. BusUpgr has no data phase and completes after invalidation acknowledgements. Writeback writes SRAM then completes. Errors are broadcast to requester and terminate the transaction without installing unverified data; final core error mapping remains open.

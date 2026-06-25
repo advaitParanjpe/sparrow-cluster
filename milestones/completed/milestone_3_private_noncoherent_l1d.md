@@ -1,4 +1,4 @@
-# Milestone 3 — Private Non-Coherent L1 Data Caches
+# Milestone 4 — Snoopy Coherence Transport Infrastructure
 
 ## Status
 
@@ -6,22 +6,25 @@ READY
 
 ## Goal
 
-Add one private blocking L1 data cache to each of the four Sparrow-V cores while preserving all completed Milestone 1 and Milestone 2 behavior.
+Implement and verify the shared snoopy coherence transport that will support MSI in Milestone 5.
 
-Each L1D must be:
+This milestone must establish:
 
-- 2 KiB;
-- 2-way set associative;
-- 16-byte cache blocks;
-- 64 sets;
-- blocking;
-- write-back;
-- write-allocate;
-- capable of byte, halfword, and word accesses supported by Sparrow-V;
-- non-coherent during this milestone;
-- connected to the existing shared word-sized memory path.
+- one globally ordered coherence transaction at a time;
+- round-robin arbitration among four L1D coherence requesters;
+- command broadcast to all four L1D caches;
+- snoop request and response interfaces;
+- shared-copy and modified-owner response collection;
+- full-cache-block intervention data transfer;
+- memory-versus-cache response-source selection;
+- SRAM update during modified-owner intervention;
+- invalidation acknowledgement transport;
+- transaction completion;
+- protocol counters and assertions.
 
-This milestone must establish correct private data-cache behavior, including refill, store merging, dirty eviction, and uncached-address bypass, without implementing MSI, snooping, LR/SC, or other later functionality.
+The existing L1D caches must remain functionally non-coherent for processor accesses in this milestone.
+
+Do not implement production MSI state transitions yet.
 
 ## Required context
 
@@ -31,10 +34,11 @@ Before editing, read:
 - `README.md`
 - `docs/architecture.md`
 - `docs/cache_architecture.md`
-- `docs/interface_audit.md`
+- `docs/coherence_protocol.md`
+- `docs/bus_protocol.md`
 - `docs/module_hierarchy.md`
+- `docs/interface_audit.md`
 - `docs/memory_map.md`
-- `docs/boot_and_runtime.md`
 - `docs/verification_plan.md`
 - `docs/performance_plan.md`
 - `docs/build_roadmap.md`
@@ -42,501 +46,519 @@ Before editing, read:
 - `docs/risks_and_open_questions.md`
 - `docs/build_reports/milestone_1_uncached_cluster.md`
 - `docs/build_reports/milestone_2_private_l1i.md`
+- `docs/build_reports/milestone_3_private_noncoherent_l1d.md`
 - relevant ADRs under `docs/architecture_decisions/`
-- current L1I, adapter, arbiter, memory-controller, SRAM, and multicore test implementations
+- current L1D, shared arbiter, memory-controller, SRAM, and system-test implementations
 
-Inspect the present repository state before editing.
+Inspect the repository state before editing.
 
 Do not modify sibling repositories.
 
-Use targeted searches and concise command output. Avoid repeatedly reading large source files.
+Use targeted searches and concise outputs.
 
-## Baseline architecture
+## Baseline transport model
 
-The frozen L1D configuration is:
+The coherence transport must support exactly four L1D coherence participants in the tested system.
 
-- one private L1D per core;
-- capacity: 2 KiB;
-- associativity: 2 ways;
-- cache-block size: 16 bytes;
-- sets: 64;
-- words per cache block: 4;
-- processor data width: 32 bits;
-- blocking miss handling;
-- one active L1D transaction per core;
-- write-back;
-- write-allocate;
-- one replacement bit per set;
-- no coherence;
-- no snooping;
-- no cache-to-cache transfers;
-- no LR/SC;
-- no MSHRs;
-- shared lower-level memory remains globally serialized.
+The transport uses:
 
-For a 32-bit byte address:
+- one active coherence transaction globally;
+- round-robin requester arbitration;
+- full command broadcast to all L1D caches;
+- one requesting cache;
+- three peer snoopers;
+- block-aligned 16-byte coherence addresses;
+- full 16-byte intervention data;
+- four sequential 32-bit lower-level words where required;
+- globally ordered transaction completion;
+- no split transactions;
+- no multiple outstanding coherence transactions;
+- no directory;
+- no NoC or crossbar.
 
-- byte offset: bits `[1:0]`;
-- word offset: bits `[3:2]`;
-- set index: bits `[9:4]`;
-- tag: bits `[31:10]`.
+## Important milestone boundary
 
-Verify these widths against the implemented address width and document the actual values.
+Milestone 4 proves the transport separately from MSI.
 
-## Critical non-coherent-system rule
+The production L1D caches must not yet:
 
-Private L1D caches are not yet coherent.
+- transition between `I`, `S`, and `M`;
+- invalidate lines because of real processor-generated snoops;
+- perform real `BusRd`, `BusRdX`, or `BusUpgr` transitions;
+- expose cacheable shared writable data as coherent.
 
-Therefore, this milestone must not allow ordinary shared synchronization or shared writable communication to rely on cached copies.
+It is acceptable to add:
 
-Implement and document an explicit address policy:
+- dormant or test-controlled snoop ports;
+- snoop lookup helpers;
+- metadata/data observation interfaces;
+- test fixtures representing `shared` or `modified` ownership;
+- transport adapters that Milestone 5 will connect to actual MSI controllers.
 
-### Cacheable region
+Do not partially implement MSI and hide it inside the transport milestone.
 
-Normal SRAM data intended for:
+## Coherence command definitions
 
-- private per-core stacks;
-- private data;
-- read-only shared data after initialization;
-- statically partitioned writable arrays where no cache block is accessed by more than one core.
+Define a canonical command encoding for at least:
 
-### Uncached region
+- `BUS_RD`
+- `BUS_RDX`
+- `BUS_UPGR`
+- `WRITEBACK`
 
-Use an uncached region for:
+Optional internal commands may be added only if needed for:
 
-- hart-ID reads;
-- release flags;
-- per-core completion words;
-- control/status registers;
-- simulation completion;
-- temporary pre-coherence synchronization;
-- any shared writable location observed by multiple cores.
+- intervention writeback;
+- response collection;
+- transaction completion.
 
-The uncached region must bypass L1D and use the existing shared-memory/MMIO path directly.
+Use a shared package or include file for canonical command and response types.
 
-Prefer preserving the current control/status map where practical.
+Do not duplicate encodings across modules.
 
-Do not use software cache flushes as a substitute for coherence.
+## Transaction interface
 
-Do not claim shared-memory coherence during this milestone.
+Define a stable requester-side coherence interface carrying at least:
 
-## Implementation scope
+- request valid;
+- request ready or accepted;
+- requester ID;
+- coherence command;
+- block-aligned address;
+- optional writeback data;
+- writeback-data-valid;
+- response valid;
+- response data;
+- shared indication;
+- modified-owner indication;
+- completion;
+- error indication if supported.
 
-### 1. Implement a reusable L1D module
+The exact signal names may differ, but the semantics must be documented.
 
-Create a synthesizable private data-cache module with:
+A requester must hold command and address stable until acceptance.
 
-- processor-side request/response interface compatible with the current Sparrow-V DMEM boundary;
-- lower-level word request/response interface compatible with the existing shared system path;
-- two tag ways;
-- two 16-byte data ways;
-- valid metadata;
-- dirty metadata;
-- one replacement bit per set;
-- blocking controller;
-- four-word refill;
-- four-word dirty writeback;
-- byte-enable-aware store updates;
-- uncached bypass path;
-- reset invalidation.
+A transaction remains associated with the granted requester until completion.
 
-Parameterize only where useful:
+## Snooper interface
 
-- address width;
-- data width;
-- sets;
-- ways;
-- cache-block bytes;
-- cacheable address range or decode parameters.
+Each L1D participant must receive:
 
-Do not over-generalize beyond the tested baseline.
+- snoop valid;
+- snoop command;
+- block-aligned address;
+- requester ID;
+- indication that the snoop concerns another cache.
 
-### 2. Preserve Sparrow-V DMEM semantics
+Each snooper must return a stable response including at least:
 
-Audit and preserve the actual DMEM handshake.
+- response valid;
+- block present or shared indication;
+- modified-owner indication;
+- intervention data valid;
+- full 16-byte data when acting as modified owner;
+- invalidation acknowledgement where applicable;
+- completion or ready indication.
 
-Requirements:
+The requester must not snoop itself as a peer.
 
-- request address, write data, byte enables, and operation remain stable while stalled;
-- each accepted core request receives exactly one response;
-- no response is returned without a tracked request;
-- load result formatting remains compatible with the existing core;
-- store completion semantics remain unchanged;
-- existing alignment and trap behavior remain unchanged;
-- byte, halfword, and word write masks are preserved;
-- no duplicate store or repeated side effect occurs under backpressure.
+The transport must reject or assert against more than one modified owner.
 
-Determine whether sign and zero extension happen inside Sparrow-V or the memory subsystem. Preserve the existing split of responsibility.
+## Transport phases
 
-### 3. Load hit behavior
+Implement a clear transaction state machine with phases equivalent to:
 
-For a cacheable load hit:
+1. Idle
+2. Request arbitration
+3. Command broadcast
+4. Snoop lookup
+5. Snoop response collection
+6. Response-source selection
+7. Memory access or intervention transfer
+8. Optional SRAM update
+9. Requester response
+10. Completion
 
-1. Match tag and valid state.
-2. Select the matching way.
-3. Select the requested word from the cache block.
-4. Return the 32-bit word expected by Sparrow-V.
-5. Update replacement state.
-6. Increment relevant counters.
+The exact state partition may differ, but each phase must be observable and documented.
 
-The cache must not respond from an invalid way.
+## Arbitration
 
-At most one way may match.
-
-### 4. Store hit behavior
-
-For a cacheable store hit:
-
-1. Match the cache block.
-2. Update only bytes enabled by the request byte mask.
-3. Preserve all non-enabled bytes.
-4. Mark the block dirty.
-5. Update replacement state.
-6. Complete the processor request without immediately writing SRAM.
-
-Support the byte masks produced for:
-
-- `SB`;
-- `SH`;
-- `SW`.
-
-Preserve existing misalignment behavior.
-
-### 5. Read miss behavior
-
-For a cacheable load miss:
-
-1. Capture the processor request.
-2. Select an invalid way if available.
-3. Otherwise select the replacement victim.
-4. If the victim is valid and dirty, write back all four words.
-5. Refill all four words of the requested block.
-6. Install tag, valid, and clean metadata.
-7. Return the requested word.
-8. Update replacement state and counters.
-
-### 6. Write miss behavior
-
-Use write-allocate.
-
-For a cacheable store miss:
-
-1. Capture the store address, data, and byte enables.
-2. Select a victim.
-3. Write back a dirty victim if necessary.
-4. Refill the requested cache block.
-5. Install the new block.
-6. Merge the pending store into the correct word and bytes.
-7. Mark the block dirty.
-8. Complete the processor request.
-
-Do not issue a direct write-around for cacheable store misses.
-
-### 7. Dirty eviction
-
-A valid dirty victim must be written back before replacement.
+Implement round-robin arbitration among four coherence requesters.
 
 Requirements:
 
-- four sequential 32-bit write transactions;
-- block-aligned victim base address;
-- correct word order;
-- correct data;
-- full-word byte enables for writeback;
-- no victim metadata destroyed before writeback completes;
-- no processor completion before required writeback and refill finish;
-- dirty bit clears only when the old block is safely written back or replaced;
-- writeback traffic remains associated with the correct core/cache.
+- only one requester granted;
+- priority advances after completed transactions;
+- active ownership retained through completion;
+- bounded starvation under continuous requests;
+- reset initializes priority deterministically;
+- simultaneous requests from all four caches are tested;
+- requester identity is preserved through all transaction phases.
 
-A clean victim must not generate writeback traffic.
+Do not arbitrate individual refill words as independent coherence transactions.
 
-### 8. Refill behavior
+## Command broadcast
 
-Use four sequential 32-bit reads.
+After grant:
+
+- broadcast one canonical command and block address;
+- all non-requesting L1D participants observe the same command;
+- all snoopers receive the command in the same global order;
+- snoop response collection begins only after a valid broadcast;
+- command and address remain stable through the defined snoop phase.
+
+Add assertions that all snoopers observe identical command/address values for a transaction.
+
+## Snoop response collection
+
+Collect responses from all non-requesting caches.
+
+The transport must determine:
+
+- whether any peer holds a copy;
+- whether any peer claims modified ownership;
+- whether intervention data is available;
+- whether all required snoop responses have arrived;
+- whether required invalidation acknowledgements have arrived.
 
 Requirements:
 
-- block-aligned refill base;
-- word indices 0 through 3;
-- correct ordering or explicit per-word placement;
-- delayed-response tolerance;
-- interleaving with traffic from other cores is allowed;
-- no requirement to lock the shared path for a whole cache-block operation;
-- each word response reaches the correct cache;
-- cache installation occurs only after the complete refill;
-- the pending load or store completes only after the required block contents are available.
+- no transaction advances before all required snoopers respond;
+- requester response is not generated early;
+- duplicate snoop responses are rejected or ignored safely;
+- requester ID is excluded from peer-response requirements;
+- missing responses lead to bounded timeout detection in verification.
 
-Do not add burst support.
+## Modified-owner intervention
 
-### 9. Uncached bypass
+Freeze and implement this baseline behavior:
 
-Addresses in the uncached region must:
+1. One peer cache may identify itself as modified owner.
+2. That owner provides the authoritative 16-byte cache block.
+3. The requester receives that block.
+4. Shared SRAM is updated with the same block as part of the same coherence transaction.
+5. The transaction completes only after the requester response and required SRAM update complete.
 
-- bypass tag lookup for functional purposes;
-- not allocate into L1D;
-- not update L1D replacement state;
-- not alter valid or dirty metadata;
-- issue one lower-level word transaction through the existing shared path;
-- preserve original byte enables for stores;
-- return the lower-level response to the requesting core;
-- remain globally visible according to Milestone 1 serialization.
+Use four sequential 32-bit SRAM writes unless a clean internal block-write helper already exists.
 
-The uncached decode must be deterministic and documented.
+Requirements:
 
-Add tests proving uncached writes are immediately observable by another core and do not enter the cache.
+- intervention data must come from exactly one owner;
+- owner data must take priority over SRAM;
+- all four words must be transferred correctly;
+- SRAM update uses the same data delivered to the requester;
+- no stale SRAM data may be returned when a modified owner exists;
+- no transaction completes before the intervention update is safely accepted.
 
-### 10. Reset behavior
+Do not yet change the owner cache’s MSI state in production logic. That occurs in Milestone 5.
 
-On reset:
+## Shared-copy behavior
 
-- all valid bits clear;
-- all dirty bits clear;
-- controller returns to idle;
-- no stale processor or lower-level response may be emitted;
-- tag/data arrays need not be zeroed if invalid metadata is correctly cleared;
-- replacement bits initialize deterministically;
-- performance counters reset.
+If one or more peers indicate a clean shared copy but no modified owner exists:
 
-### 11. Four-core integration
+- the transaction records `shared_seen`;
+- SRAM remains the authoritative data source;
+- requester receives SRAM data when data is required;
+- no peer data transfer is required.
 
-Instantiate one private L1D per core.
+The shared indication must be returned to the requester for future MSI use.
 
-The architecture becomes:
+## No-peer-copy behavior
 
-```text
-Sparrow-V Core
-   ├── private L1I
-   └── private L1D
-          ├── cacheable path
-          └── uncached bypass
-                   |
-          per-core system request source
-                   |
-          existing local/global arbitration
-                   |
-          shared memory controller
-                   |
-          shared SRAM
-```
+If no snooper reports a copy:
 
-L1I behavior must remain unchanged.
+- SRAM provides the requested block when required;
+- `shared_seen` is false;
+- `modified_owner_seen` is false.
 
-The global system must arbitrate among:
+This result will later allow MESI experimentation, but MESI must not be implemented now.
+
+## `BUS_RD` behavior
+
+Transport-only behavior:
+
+- broadcast `BUS_RD`;
+- collect peer-presence and modified-owner responses;
+- if modified owner exists, use intervention data and update SRAM;
+- otherwise fetch the full block from SRAM;
+- return block data and `shared_seen` metadata to requester;
+- complete transaction.
+
+No production cache state change is implemented yet.
+
+## `BUS_RDX` behavior
+
+Transport-only behavior:
+
+- broadcast `BUS_RDX`;
+- collect peer-presence, modified-owner, and invalidation acknowledgements;
+- if modified owner exists, use intervention data and update SRAM;
+- otherwise fetch data from SRAM;
+- return the block to requester;
+- complete only after all required peer acknowledgements.
+
+Actual peer invalidation state transitions are deferred to Milestone 5.
+
+Test snoopers may emulate acknowledgement behavior.
+
+## `BUS_UPGR` behavior
+
+Transport-only behavior:
+
+- broadcast `BUS_UPGR`;
+- no data response required;
+- collect all required invalidation acknowledgements;
+- complete only when acknowledgements are received;
+- assert if a peer claims modified ownership for the same block.
+
+Actual state invalidation is deferred to Milestone 5.
+
+## `WRITEBACK` behavior
+
+Support a requester writing a full 16-byte dirty block to SRAM.
+
+Requirements:
+
+- block address aligned;
+- four words transferred correctly;
+- no snoop broadcast required unless the architecture document explicitly requires observation;
+- requester receives completion only after SRAM accepts the full block;
+- writeback is globally ordered against coherence transactions.
+
+Do not conflate a normal L1D dirty eviction writeback with modified-owner intervention.
+
+Document both paths.
+
+## Shared SRAM interaction
+
+The coherence transport must connect to the existing shared memory controller or a clearly factored cache-block adapter.
+
+Requirements:
+
+- word-sized SRAM interface remains valid;
+- block reads use four ordered 32-bit reads;
+- block writes use four ordered 32-bit writes;
+- no burst protocol;
+- only one memory-side operation active at a time;
+- memory response cannot be routed to the wrong coherence transaction;
+- existing uncached MMIO/control traffic remains supported.
+
+Do not break L1I refill or L1D uncached traffic.
+
+## Integration with existing traffic
+
+The system currently contains:
 
 - L1I refill traffic;
-- L1D refill reads;
+- L1D refill traffic;
 - L1D dirty writebacks;
-- L1D uncached loads and stores.
+- L1D uncached bypass traffic.
 
-Preserve explicit source and port tracking.
+Milestone 4 must introduce a clear boundary between:
 
-### 12. Performance counters
+- coherence-capable L1D block transactions;
+- ordinary uncached/MMIO transactions;
+- L1I refill transactions.
 
-Add per-core L1D counters for:
-
-- accesses;
-- load accesses;
-- store accesses;
-- hits;
-- misses;
-- load misses;
-- store misses;
-- refill words;
-- dirty writeback words;
-- dirty evictions;
-- uncached accesses;
-- miss-stall cycles where practical.
-
-Use a clear counting convention.
-
-At minimum verify:
+Preferred structure:
 
 ```text
-accesses = hits + misses + uncached_accesses
+L1D coherence requesters
+        |
+Snoopy coherence transport
+        |
+Memory-side block adapter
+        |
+Existing shared memory controller/SRAM
 ```
 
-if uncached accesses are excluded from hit/miss lookup counts.
+L1I and uncached traffic may continue to share the lower-level serialized path.
 
-Alternatively, if all processor requests count as accesses and uncached requests are treated separately, document and test the chosen equation precisely.
+Do not create ambiguous ownership between the old arbiter and new transport.
 
-Do not add software-visible performance CSRs unless this is already easy and consistent with the current implementation.
+Document the final arbitration hierarchy.
+
+## Test-controlled snoop agents
+
+Because MSI is not yet connected, create reusable verification snoop agents or fixtures able to emulate:
+
+- no cached peer copy;
+- one or more shared copies;
+- one modified owner;
+- invalidation acknowledgement delay;
+- modified-owner data delay;
+- malformed duplicate modified-owner response;
+- missing acknowledgement;
+- backpressure.
+
+These test agents must use the same interfaces that production L1D caches will use in Milestone 5.
+
+Avoid writing a transport testbench that bypasses the intended production interface.
+
+## Counters
+
+Add transport counters for:
+
+- total coherence transactions;
+- `BUS_RD`;
+- `BUS_RDX`;
+- `BUS_UPGR`;
+- `WRITEBACK`;
+- transactions with shared copies;
+- modified-owner interventions;
+- SRAM block reads;
+- SRAM block writes;
+- invalidation acknowledgements;
+- arbitration wait cycles per requester;
+- occupied transport cycles;
+- protocol-error detections;
+- timeout detections in verification where applicable.
+
+Counters may remain internal or testbench-visible.
+
+Document exact counting points.
 
 ## Explicit exclusions
 
 Do not implement:
 
-- MSI;
-- MESI;
-- coherence state bits;
-- snooping;
-- invalidation;
-- cache-to-cache transfers;
+- production MSI stable-state transitions;
+- production MSI transient-state transitions;
+- actual L1D invalidation;
+- cacheable shared-memory correctness;
 - LR.W;
 - SC.W;
-- reservations;
-- atomic locks;
+- reservation tracking;
+- atomics;
+- MESI;
 - MSHRs;
 - hit-under-miss;
-- multiple outstanding L1D misses;
-- write combining;
-- store buffers;
-- hardware prefetching;
-- victim caches;
-- an L2 cache;
+- multiple outstanding coherence transactions;
+- directory coherence;
+- L2;
+- crossbar or NoC;
 - bursts;
-- multiple global outstanding transactions;
-- coherent instruction caches;
-- self-modifying code support;
+- coherent L1I;
+- self-modifying code;
 - SparrowML execution;
 - FPGA deployment;
-- ASIC physical-design evaluation.
+- ASIC physical evaluation.
 
-Do not begin Milestone 4.
+Do not begin Milestone 5.
 
 ## Functional requirements
 
 The implementation must demonstrate:
 
-1. Four private L1D caches.
-2. 2 KiB per cache.
-3. Two ways and 64 sets.
-4. 16-byte cache blocks.
-5. Blocking behavior.
-6. Load hits.
-7. Store hits.
-8. Byte, halfword, and word updates.
-9. Write-allocate store misses.
-10. Four-word refills.
-11. Four-word dirty writebacks.
-12. Clean evictions without writeback.
-13. Dirty evictions with correct writeback.
-14. Deterministic replacement.
-15. Reset invalidation.
-16. Correct uncached bypass.
-17. Interleaved traffic from multiple cores.
-18. Continued L1I correctness.
-19. Continued Milestone 1 and Milestone 2 behavior.
-20. Accurate L1D counters.
-21. No claim or accidental dependency on coherence.
+1. Four coherence requester ports.
+2. One active coherence transaction globally.
+3. Round-robin requester arbitration.
+4. Stable command/address capture.
+5. Broadcast to all non-requesting snoopers.
+6. Correct snooper exclusion for requester.
+7. Complete snoop-response collection.
+8. Shared-copy aggregation.
+9. Single modified-owner detection.
+10. Modified-owner data intervention.
+11. Requester receives intervention data.
+12. SRAM receives the same intervention data.
+13. SRAM response when no modified owner exists.
+14. `BUS_RD` transport behavior.
+15. `BUS_RDX` transport behavior.
+16. `BUS_UPGR` acknowledgement behavior.
+17. Full-block `WRITEBACK`.
+18. Correct four-word block reads and writes.
+19. Correct response routing.
+20. Existing L1I and uncached traffic remain functional.
+21. No production MSI state changes.
 
 ## Verification requirements
 
 ### Unit tests
 
-Add focused L1D tests for:
+Add focused tests for:
 
-- cold load miss and refill;
-- load hit after refill;
-- all four word offsets;
-- store hit;
-- byte store to each byte lane;
-- halfword store to legal lanes;
-- full-word store;
-- preservation of non-enabled bytes;
-- store miss with write allocate;
-- clean victim replacement;
-- dirty victim writeback;
-- correct four-word writeback order;
-- writeback followed by refill;
-- same-set two-way occupancy;
-- third conflicting block replacement;
-- invalid-way preference;
-- deterministic pseudo-LRU update;
-- delayed lower-level responses;
+- idle reset behavior;
+- one requester;
+- simultaneous requests from all four requesters;
+- grant order `0,1,2,3`;
+- priority rotation after completion;
+- held request stability;
+- requester identity retention;
+- command broadcast;
+- requester excluded from snoop requirements;
+- no-peer-copy `BUS_RD`;
+- one shared-copy `BUS_RD`;
+- multiple shared-copy `BUS_RD`;
+- modified-owner `BUS_RD`;
+- modified-owner intervention data integrity;
+- SRAM update after intervention;
+- no stale SRAM response during intervention;
+- no-peer-copy `BUS_RDX`;
+- shared-copy `BUS_RDX`;
+- modified-owner `BUS_RDX`;
+- delayed invalidation acknowledgements;
+- `BUS_UPGR`;
+- delayed `BUS_UPGR` acknowledgements;
+- illegal modified-owner response to `BUS_UPGR`;
+- full-block `WRITEBACK`;
+- delayed memory responses;
 - backpressure;
-- reset invalidation;
-- reset during idle;
-- uncached load;
-- uncached store;
-- uncached no-allocation behavior;
-- counter correctness;
-- invalid access behavior consistent with Milestone 1.
+- duplicate snoop response;
+- two modified-owner claims;
+- missing acknowledgement timeout in verification;
+- response to correct requester only;
+- counter consistency.
 
-### Four-core integration tests
+### Four-core transport integration
 
 Test:
 
-- simultaneous cold L1D misses from all four cores;
-- interleaved refills;
-- interleaved dirty writebacks;
-- L1I and L1D contention;
-- uncached completion flags;
-- private per-core cached stacks;
-- statically partitioned cached arrays;
-- no cross-core response corruption;
-- repeated arbitration rotation.
+- all four requesters continuously issuing transactions;
+- deterministic rotation;
+- different commands interleaved;
+- one requester using intervention while others wait;
+- L1I refill traffic contending below the transport;
+- uncached/MMIO traffic contending below the transport;
+- no cross-requester response corruption;
+- no transaction overlap;
+- no starvation.
 
-### Non-coherence demonstration
+### Existing-system regression
 
-Add a deliberate verification-only demonstration showing why shared writable cacheable data is unsafe before MSI.
+All Milestone 1–3 tests must remain valid.
 
-This must not be a passing functional requirement based on incoherent behavior.
+The production L1D caches may remain on their existing non-coherent behavior while the transport is tested through dedicated interfaces or a test mode.
 
-Preferred approach:
-
-- document or simulate two cores caching the same block;
-- show that one core’s write is not automatically visible to the other;
-- mark the scenario as an expected non-coherent limitation;
-- ensure normal regressions use the uncached region or non-overlapping cache blocks for communication.
-
-Do not make the regression depend on nondeterministic stale-data outcomes.
-
-### Software/system tests
-
-Adapt the existing multicore software tests so they remain valid with non-coherent L1D caches.
-
-Required policies:
-
-- release flags and completion words use uncached addresses;
-- shared writable communication uses uncached addresses unless statically partitioned and never read by another core during execution;
-- per-core stacks are cacheable and disjoint;
-- shared read-only data may be cacheable only after initialization and release through the uncached flag;
-- partitioned arrays must be aligned or padded to prevent two cores writing the same cache block.
-
-Required programs:
-
-1. Existing hart-ID and stack-isolation test through private L1D stacks.
-2. Shared read-only data test using uncached release synchronization.
-3. Partitioned cached-array writes with cache-block-disjoint ownership.
-4. Uncached communication test proving immediate cross-core visibility.
-5. Dirty eviction test that validates final SRAM contents after replacement.
-6. Byte/halfword/word store test through the real core.
-7. Combined L1I/L1D stress test.
-
-If final SRAM validation requires explicit eviction because dirty data may remain resident, construct the test to force eviction rather than adding a flush instruction.
+Do not weaken previous functional tests.
 
 ### Assertions
 
 Add bounded assertions for:
 
-- no hit from an invalid way;
-- at most one matching way;
-- load-hit data comes from the matched way and correct offset;
-- store-hit changes only enabled bytes;
-- dirty bit is set on cacheable store completion;
-- clean victim does not produce writeback;
-- dirty victim produces exactly four writeback words;
-- writeback base address is block-aligned;
-- refill base address is block-aligned;
-- refill and writeback word indices remain in range;
-- replacement selects a legal way;
-- metadata is not overwritten before dirty writeback completes;
-- installation occurs only after full refill;
-- processor completion occurs exactly once;
-- lower-level completion is consumed only by the owning cache;
-- one L1D has at most one active transaction;
-- uncached accesses do not allocate;
-- uncached accesses do not modify replacement or dirty metadata;
-- reset clears valid and dirty state;
-- counters obey the documented consistency equations.
+- at most one active coherence transaction;
+- grant is one-hot;
+- active requester remains stable;
+- command and address remain stable after acceptance;
+- all snoopers observe identical command and address;
+- requester is not counted as a snoop peer;
+- response collection waits for all required peers;
+- at most one modified owner;
+- intervention data valid only when modified owner exists;
+- SRAM data is not selected when modified owner exists;
+- requester intervention data equals SRAM-update data;
+- exactly four block words transferred;
+- word index remains in range;
+- block addresses are 16-byte aligned;
+- `BUS_UPGR` returns no data;
+- `BUS_RDX` and `BUS_UPGR` wait for required acknowledgements;
+- completion occurs exactly once;
+- no completion without active transaction;
+- no response delivered to a non-requester;
+- round-robin arbitration is bounded;
+- transaction counters increment once per accepted command.
 
-Use assertions compatible with the existing Icarus flow.
-
-### Regression preservation
-
-All Milestone 1 and Milestone 2 tests must continue to pass, adapted only where the new explicit cacheable/uncached policy requires valid software address changes.
-
-Do not weaken existing checks merely to make the new cache pass.
+Use assertions compatible with Icarus.
 
 ## Documentation updates
 
@@ -544,11 +566,10 @@ Update:
 
 - `README.md`
 - `docs/architecture.md`
-- `docs/cache_architecture.md`
+- `docs/coherence_protocol.md`
+- `docs/bus_protocol.md`
 - `docs/module_hierarchy.md`
 - `docs/interface_audit.md`
-- `docs/memory_map.md`
-- `docs/boot_and_runtime.md`
 - `docs/verification_plan.md`
 - `docs/performance_plan.md`
 - `docs/build_roadmap.md`
@@ -557,24 +578,23 @@ Update:
 
 Create:
 
-- `docs/build_reports/milestone_3_private_noncoherent_l1d.md`
+- `docs/build_reports/milestone_4_snoopy_transport.md`
 
 The report must record:
 
-- implemented cache geometry;
-- address decomposition;
-- cacheable and uncached address regions;
-- replacement convention;
-- processor-side semantics;
-- refill sequence;
-- writeback sequence;
-- store-merge behavior;
-- dirty eviction behavior;
+- final requester interface;
+- final snooper interface;
+- transaction phases;
+- arbitration behavior;
+- response aggregation;
+- modified-owner intervention policy;
+- SRAM update sequence;
+- memory-versus-cache source selection;
+- acknowledgement handling;
 - counter definitions;
-- software-test adaptations;
-- non-coherence limitation;
-- tests and measured outcomes;
-- deliberately absent functionality.
+- verification agents;
+- tests and measured results;
+- functionality deliberately absent.
 
 Update:
 
@@ -593,6 +613,7 @@ make docs-check
 make sim-unit
 make sim-l1i
 make sim-l1d
+make sim-snoop-transport
 make sim-cluster
 make sim-multicore
 make regress
@@ -602,66 +623,65 @@ git status --short
 
 Target intent:
 
-- `make sim-unit`: all focused unit tests from Milestones 1–3.
-- `make sim-l1i`: existing L1I tests.
-- `make sim-l1d`: L1D-specific unit and integration tests.
+- `make sim-unit`: all focused units through Milestone 4.
+- `make sim-snoop-transport`: transport-specific directed and adverse-condition tests.
 - `make sim-cluster`: four-core hardware integration.
-- `make sim-multicore`: valid bare-metal multicore software through private L1I/L1D.
-- `make regress`: all required tests through Milestone 3.
+- `make sim-multicore`: prior valid software behavior.
+- `make regress`: complete regression through Milestone 4.
 
 Do not make `make check` run the full simulation regression.
 
 ## Completion gate
 
-Milestone 3 is complete only when:
+Milestone 4 is complete only when:
 
-- each core has one private L1D;
-- each L1D is 2 KiB, 2-way, 64-set, and uses 16-byte cache blocks;
-- each cache is blocking with one active transaction;
-- write-back and write-allocate are implemented;
-- load hits are correct;
-- store hits are correct;
-- byte, halfword, and word store masks are verified;
-- cold load misses refill correctly;
-- store misses allocate and merge correctly;
-- clean replacement is verified;
-- dirty replacement performs exactly four correct writeback words;
-- writeback followed by refill is verified;
-- all four word offsets are verified;
-- two-way conflicts and deterministic replacement are verified;
-- reset clears valid and dirty metadata;
-- an explicit uncached region bypasses L1D;
-- synchronization and completion use valid uncached communication;
-- uncached accesses are cross-core visible and do not allocate;
-- four-core simultaneous and interleaved L1D traffic is verified;
-- L1I functionality remains correct;
-- all four cores complete valid software tests;
-- cached writable sharing is not used as though coherence exists;
-- the non-coherence limitation is explicitly demonstrated and documented;
-- L1D counters are tested and consistent;
-- all required assertions pass;
-- all prior valid regressions pass;
-- required documentation matches implementation;
+- four coherence requester ports exist;
+- one globally ordered coherence transaction is active at a time;
+- round-robin arbitration is verified;
+- commands broadcast identically to all non-requesting snoopers;
+- snoop responses are collected correctly;
+- shared-copy aggregation works;
+- at most one modified owner is accepted;
+- modified-owner intervention transfers the correct 16-byte block;
+- requester receives the intervention block;
+- SRAM is updated with the identical intervention block;
+- stale SRAM data is never selected when a modified owner exists;
+- SRAM provides data when no modified owner exists;
+- `BUS_RD` transport behavior is verified;
+- `BUS_RDX` transport behavior is verified;
+- `BUS_UPGR` acknowledgement behavior is verified;
+- full-block `WRITEBACK` is verified;
+- four-word reads and writes are verified;
+- delayed responses and acknowledgements are handled;
+- adverse responses are detected;
+- no response reaches the wrong requester;
+- existing L1I, L1D, uncached, and multicore regressions pass;
+- production L1D caches remain non-coherent;
+- no MSI state transitions are implemented;
+- required assertions pass;
+- required counters are tested;
+- documentation matches implementation;
 - `make check` passes;
 - `make docs-check` passes;
 - `make sim-unit` passes;
 - `make sim-l1i` passes;
 - `make sim-l1d` passes;
+- `make sim-snoop-transport` passes;
 - `make sim-cluster` passes;
 - `make sim-multicore` passes;
 - `make regress` passes;
-- no MSI, snooping, LR/SC, L2, or Milestone 4 functionality has been added;
+- no LR/SC, MESI, L2, or Milestone 5 functionality has been added;
 - `reports/current_milestone_report.md` identifies this milestone and contains `STATUS: COMPLETE`.
 
 Use `STATUS: BLOCKED` only for a genuine external, architectural, or toolchain blocker that prevents further progress.
 
 If required work remains but can still be implemented, use `STATUS: IN_PROGRESS` and continue iterating.
 
-Do not mark the milestone complete based only on cache compilation or one passing directed test.
+Do not mark the milestone complete based only on compilation or a single happy-path transport test.
 
 ## Completion report
 
-Use this exact structure in `reports/current_milestone_report.md` and the final Codex response:
+Use this exact structure:
 
 ```text
 STATUS:
@@ -684,15 +704,17 @@ NEXT RECOMMENDED MILESTONE:
 
 Include concrete results such as:
 
-- L1D unit scenarios passed;
-- cores completing;
-- accesses, hits, misses, refill words, and writeback words;
-- dirty eviction scenarios;
-- byte/halfword/word store results;
-- uncached-bypass results;
-- arbitration and contention scenarios;
+- transport tests passed;
+- requester grant order;
+- commands exercised;
+- intervention transactions;
+- block words transferred;
+- SRAM updates;
+- acknowledgement-delay scenarios;
+- malformed-response detections;
+- counter values;
 - regression commands passed;
-- any known Icarus warnings;
+- known Icarus warnings;
 - remaining deliberate limitations.
 
-Do not paste complete source files or complete documentation into the final response.
+Do not paste complete source files or documentation.

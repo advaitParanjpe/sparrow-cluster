@@ -1,6 +1,6 @@
 # Architecture
 
-Milestone 3 is a strongly ordered four-core system with private blocking L1I and L1D caches per imported `rv32_core`. L1D accepts one audited DMEM request, performs write-back/write-allocate cacheable accesses, and bypasses documented control apertures. Its lower port is the DMEM port of the existing `core_adapter`; the adapter serializes either L1I refill or L1D traffic and holds metadata until one response returns.
+Milestone 4 retains the strongly ordered Milestone 3 production path and adds a dormant four-port snoopy transport for verification. The transport has one globally active block transaction and is not yet connected to processor-generated L1D misses; this preserves the documented non-coherent L1D behavior until Milestone 5.
 
 ```text
 four rv32_core instances -> private L1I/L1D -> per-core adapter -> 4-way RR -> controller -> one SRAM

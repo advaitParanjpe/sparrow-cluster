@@ -1,9 +1,9 @@
 PYTHON ?= python3
 
-.PHONY: check docs-check tree milestone-check milestone-run milestone-status sim-unit sim-l1i sim-l1d sim-snoop-transport sim-cluster sim-multicore regress
+.PHONY: check docs-check tree milestone-check milestone-run milestone-status sim-unit sim-l1i sim-l1d sim-snoop-transport sim-msi sim-coherence-random sim-cluster sim-multicore regress
 IVERILOG ?= iverilog
 VVP ?= vvp
-RTL = rtl/core/imported/sparrowv_scalar_pkg.sv rtl/core/imported/rv32_alu.sv rtl/core/imported/rv32_decoder.sv rtl/core/imported/rv32_immediate.sv rtl/core/imported/rv32_regfile.sv rtl/core/imported/rv32_core.sv rtl/cache/l1_instruction_cache.sv rtl/cache/l1_data_cache.sv rtl/interconnect/core_adapter.sv rtl/interconnect/round_robin_arbiter.sv rtl/interconnect/coherence_pkg.sv rtl/interconnect/snoopy_coherence_transport.sv rtl/memory/shared_memory_controller.sv rtl/top/sparrow_cluster_top.sv
+RTL = rtl/core/imported/sparrowv_scalar_pkg.sv rtl/core/imported/rv32_alu.sv rtl/core/imported/rv32_decoder.sv rtl/core/imported/rv32_immediate.sv rtl/core/imported/rv32_regfile.sv rtl/core/imported/rv32_core.sv rtl/interconnect/coherence_pkg.sv rtl/cache/l1_instruction_cache.sv rtl/cache/l1_data_cache.sv rtl/interconnect/core_adapter.sv rtl/interconnect/round_robin_arbiter.sv rtl/interconnect/snoopy_coherence_transport.sv rtl/memory/shared_memory_controller.sv rtl/top/sparrow_cluster_top.sv
 check:
 	$(PYTHON) scripts/check_repo.py
 
@@ -34,13 +34,23 @@ sim-l1i:
 
 sim-l1d:
 	@mkdir -p /tmp/sparrow-cluster-sim
-	$(IVERILOG) -g2012 -s tb_l1d -o /tmp/sparrow-cluster-sim/l1d.vvp rtl/cache/l1_data_cache.sv tb/unit/tb_l1d.sv
+	$(IVERILOG) -g2012 -s tb_l1d -o /tmp/sparrow-cluster-sim/l1d.vvp rtl/interconnect/coherence_pkg.sv rtl/cache/l1_data_cache.sv rtl/interconnect/snoopy_coherence_transport.sv tb/unit/tb_l1d.sv
 	$(VVP) /tmp/sparrow-cluster-sim/l1d.vvp
 
 sim-snoop-transport:
 	@mkdir -p /tmp/sparrow-cluster-sim
 	$(IVERILOG) -g2012 -s tb_snoopy_transport -o /tmp/sparrow-cluster-sim/snoop.vvp rtl/interconnect/coherence_pkg.sv rtl/interconnect/snoopy_coherence_transport.sv tb/unit/tb_snoopy_transport.sv
 	$(VVP) /tmp/sparrow-cluster-sim/snoop.vvp
+
+sim-msi:
+	@mkdir -p /tmp/sparrow-cluster-sim
+	$(IVERILOG) -g2012 -s tb_msi_coherence -o /tmp/sparrow-cluster-sim/msi.vvp rtl/interconnect/coherence_pkg.sv rtl/cache/l1_data_cache.sv rtl/interconnect/snoopy_coherence_transport.sv tb/coherence/tb_msi_coherence.sv
+	$(VVP) /tmp/sparrow-cluster-sim/msi.vvp
+
+sim-coherence-random:
+	@mkdir -p /tmp/sparrow-cluster-sim
+	$(IVERILOG) -g2012 -s tb_coherence_random -o /tmp/sparrow-cluster-sim/coherence_random.vvp rtl/interconnect/coherence_pkg.sv rtl/cache/l1_data_cache.sv rtl/interconnect/snoopy_coherence_transport.sv tb/coherence/tb_coherence_random.sv
+	$(VVP) /tmp/sparrow-cluster-sim/coherence_random.vvp
 
 sim-cluster:
 	@mkdir -p /tmp/sparrow-cluster-sim
@@ -52,4 +62,4 @@ sim-multicore:
 	$(IVERILOG) -g2012 -s tb_m1_multicore -o /tmp/sparrow-cluster-sim/multicore.vvp $(RTL) tb/system/tb_m1_multicore.sv
 	$(VVP) /tmp/sparrow-cluster-sim/multicore.vvp
 
-regress: check docs-check sim-unit sim-l1i sim-l1d sim-snoop-transport sim-cluster sim-multicore
+regress: check docs-check sim-unit sim-l1i sim-l1d sim-snoop-transport sim-msi sim-coherence-random sim-cluster sim-multicore

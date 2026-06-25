@@ -1,9 +1,19 @@
 # Cache architecture
 
-Milestone 3 keeps the L1I and adds one L1D per core. Each is 2 KiB, 2-way, 64 sets, and 16-byte blocks: `64*2*16=2048`. The audited 32-bit address breakdown is byte `[1:0]`, word `[3:2]`, set `[9:4]`, tag `[31:10]` (22 bits). Invalid ways are selected first (way 0 then way 1); a hit or fill sets the bit to the other way.
+L1I and L1D are 2 KiB, 2-way, 64-set, 16-byte-block caches: `64*2*16=2048`. The 32-bit address breakdown is byte `[1:0]`, word `[3:2]`, set `[9:4]`, and tag `[31:10]`.
 
-L1D is blocking, private, non-coherent, write-back, and write-allocate. It has one active request, performs four aligned word reads for a refill, and writes all four words of a dirty victim before refill. Stores merge little-endian byte strobes and set dirty; a cacheable store miss refills then merges. Tag/valid install only after word four. `0x200..0x20f`, `0x300..0x30f`, `0x400..0x40f`, `0x600..0x60f`, and `0x10000000` are uncached; all other SRAM addresses are cacheable. No MSI, snooping, flush, LR/SC, MSHR, or hit-under-miss exists.
+L1D is blocking, write-back, write-allocate, and coherent for cacheable SRAM. Its resident-line metadata is authoritative MSI state:
 
-Milestone 4 does not change this L1D behavior. Its standalone transport uses the same 16-byte block and four 32-bit word granularity, ready for later MSI connection.
+| State | Meaning |
+| --- | --- |
+| `I` | invalid, cannot hit |
+| `S` | valid clean shared |
+| `M` | valid dirty owner |
 
-The processor side is the audited 32-bit IMEM valid/ready contract. The L1I lower side is the existing 32-bit adapter IMEM contract, not a new bus: each read carries one aligned word address and receives one word response. Per-core internal counters expose accesses, hits, misses, refill words, and miss-stall cycles; accesses are counted on accepted fetches, so `accesses = hits + misses`.
+There are no independent architectural valid or dirty bits. Victim selection still prefers invalid way 0, then invalid way 1, then the replacement bit. A clean `S` victim is replaced without writeback; an `M` victim issues a full-block coherence `WRITEBACK` before replacement.
+
+Processor-side transient phases are explicit control states: dirty victim writeback request/wait, coherence request/wait for `BUS_RD`, `BUS_RDX`, or `BUS_UPGR`, uncached request/wait, and processor response. A load miss installs `S`; a store miss installs `M`; a store hit in `S` issues `BUS_UPGR` then merges bytes after ownership is granted. A store hit in `M` merges locally. Loads in `S` or `M` return the resident word.
+
+Snoops are answered through the transport snooper port. `BUS_RD` to an `M` line supplies the full 16-byte block and downgrades to `S`. `BUS_RDX` to `S` invalidates; `BUS_RDX` to `M` supplies the block and invalidates. `BUS_UPGR` to `S` invalidates; `BUS_UPGR` to `M` increments the protocol-error counter and leaves state uncorrupted.
+
+Uncached addresses are unchanged: `0x200..0x20f`, `0x300..0x30f`, `0x400..0x40f`, `0x600..0x60f`, and `0x10000000` bypass L1D allocation and coherence.

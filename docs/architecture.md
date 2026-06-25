@@ -1,11 +1,15 @@
 # Architecture
 
-Milestone 4 retains the strongly ordered Milestone 3 production path and adds a dormant four-port snoopy transport for verification. The transport has one globally active block transaction and is not yet connected to processor-generated L1D misses; this preserves the documented non-coherent L1D behavior until Milestone 5.
+Milestone 5 implements the four-core coherent production path:
 
 ```text
-four rv32_core instances -> private L1I/L1D -> per-core adapter -> 4-way RR -> controller -> one SRAM
+four rv32_core instances
+  -> private L1I / coherent private L1D
+  -> L1I and uncached L1D through per-core adapters
+  -> cacheable L1D through snoopy MSI transport
+  -> one shared SRAM controller
 ```
 
-Each refill may release arbitration between words, so L1I refill words from different cores and uncached DMEM work can interleave. `0x10000000` is a read-only core-local hart-ID aperture: a read returns the controller-recorded source ID. SRAM and the controller are otherwise shared.
+Each core has a private 2 KiB, 2-way, 16-byte-block L1I and L1D. L1I remains private and non-coherent. Cacheable L1D requests use blocking MSI coherence over the Milestone 4 `snoopy_coherence_transport`; uncached apertures bypass MSI and still use the existing adapter path. The transport serializes one block transaction at a time and arbitrates among the four L1D requesters round-robin. A small memory-side mux gives coherence SRAM block transfers priority over adapter traffic while preserving the single shared SRAM controller.
 
-Read and write latencies are independently parameterized and default to two controller cycles. Invalid or unmapped accesses return zero because the audited Sparrow-V memory interface has no error signal; this preserves its available response-only contract and is tested at controller level.
+The SRAM controller remains byte-addressed and fixed-latency. `0x10000000` is a read-only core-local hart-ID aperture. Invalid or unmapped accesses return zero because the audited Sparrow-V memory interface has no error signal.

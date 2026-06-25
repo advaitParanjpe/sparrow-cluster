@@ -14,8 +14,4 @@ Default SRAM is parameterized as 256 KiB at `0x00000000..0x0003ffff`; unmapped a
 | `0x0003fc00..0x0003ffff` | four 256-byte production stack regions, allocated downward |
 | `0x10000000` | read-only core-local hart ID |
 
-For Milestone 3, the `0x200..0x20f`, `0x300..0x30f`, `0x400..0x40f`, `0x600..0x60f`, and hart-ID apertures bypass L1D. Remaining mapped SRAM is cacheable only for private data, read-only initialized data, or 16-byte-block-disjoint writable partitions.
-
-Milestone 4 transport verification accesses mapped SRAM through a word-sized block adapter: four ascending aligned words per 16-byte transaction. It does not alter production memory-map or uncached policy.
-
-The directed 4 KiB test configuration uses equivalent low test stacks at `0x6f0`, `0x5f0`, `0x4f0`, and `0x3f0`; they are non-overlapping. No other control registers exist.
+Milestone 5 makes ordinary mapped SRAM cacheable and coherent through MSI, except for the explicit uncached apertures above. Uncached accesses do not allocate and do not modify MSI metadata. The directed 4 KiB test configuration uses equivalent low test stacks at `0x6f0`, `0x5f0`, `0x4f0`, and `0x3f0`; they are non-overlapping.

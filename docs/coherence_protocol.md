@@ -18,3 +18,5 @@ Local processor requests are accepted only in the L1D `IDLE` state. Snoop respon
 Assertions and checked invariants cover invalid hits, duplicate ways, upgrades without `S`, stores completing outside `M`, stale-SRAM selection over an owner, requester self-snoop, and counter accounting.
 
 LR/SC uses the existing MSI transitions. LR is a coherent load and may complete from `S`, `M`, or after `BUS_RD` refill to `S`. SC with a matching resident reservation stores locally in `M` or upgrades `S->M` through `BUS_UPGR` before the merge. SC with no matching resident reservation fails immediately and issues no ownership transaction. Remote `BUS_RDX` and `BUS_UPGR` to the reserved block clear the reservation; the implementation also clears conservatively on `BUS_RD` downgrade of a reserved modified block.
+
+Milestone 7 workloads use this same protocol without adding commands. Atomic counter, lock, barrier, ping-pong, false-sharing, padded, read-mostly, reduction, and mixed workloads place shared state in cacheable SRAM so traffic is visible through the MSI and LR/SC counters. Control and completion apertures remain uncached and are not used to claim coherence behavior.

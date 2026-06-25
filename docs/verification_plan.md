@@ -6,4 +6,8 @@
 
 `make sim-lrsc` runs focused decoder checks plus four-L1D directed LR/SC coherence tests covering success, SC without LR, mismatched block, clear-on-SC, remote invalidation, same-block different-word conflict, `S->M` upgrade success, eviction clearing, uncached/MMIO unsupported behavior, and counter reconciliation. `make sim-atomic-random` runs deterministic seed `0x5eed600d` with 72 mixed atomic/coherent operations plus seeded successful SCs against a reservation and memory reference model.
 
-`make sim-cluster` runs four real cores with L1I, coherent L1D, uncached result stores, and shared SRAM contention. `make sim-multicore` validates uncached synchronization/completion plus cached private stack and partition activity. `make regress` runs all checks and simulations. Icarus constant-select warnings are informational.
+`make sw-check`, `make sw-build`, and `make sw-disasm` generate all Milestone 7 runtime/workload images, validate layout constraints, record the local toolchain audit, and scan listings for unsupported instructions.
+
+`make sim-runtime` checks all-core startup, hart IDs, per-hart stacks, active-hart filtering, shared initialization, and completion reporting. `make sim-counter`, `make sim-lock`, and `make sim-barrier` run LR/SC-backed software synchronization through real cores. `make sim-workloads` runs producer-consumer, reduction, ownership ping-pong, false-sharing, padded comparison, read-mostly, and mixed private/shared workloads with bounded timeouts and hardware counter checks.
+
+`make sim-cluster` runs four real cores with L1I, coherent L1D, uncached result stores, and shared SRAM contention. `make sim-multicore` validates uncached synchronization/completion plus cached private stack and partition activity. `make regress` runs all checks and simulations through Milestone 7. Icarus constant-select warnings are informational.

@@ -1,6 +1,6 @@
 PYTHON ?= python3
 
-.PHONY: check docs-check tree milestone-check milestone-run milestone-status sim-unit sim-l1i sim-l1d sim-snoop-transport sim-msi sim-coherence-random sim-lrsc sim-atomic-random sim-cluster sim-multicore regress
+.PHONY: check docs-check tree milestone-check milestone-run milestone-status sw-check sw-build sw-disasm sim-unit sim-l1i sim-l1d sim-snoop-transport sim-msi sim-coherence-random sim-lrsc sim-atomic-random sim-runtime sim-counter sim-lock sim-barrier sim-workloads sim-cluster sim-multicore regress
 IVERILOG ?= iverilog
 VVP ?= vvp
 RTL = rtl/core/imported/sparrowv_scalar_pkg.sv rtl/core/imported/rv32_alu.sv rtl/core/imported/rv32_decoder.sv rtl/core/imported/rv32_immediate.sv rtl/core/imported/rv32_regfile.sv rtl/core/imported/rv32_core.sv rtl/interconnect/coherence_pkg.sv rtl/cache/l1_instruction_cache.sv rtl/cache/l1_data_cache.sv rtl/interconnect/core_adapter.sv rtl/interconnect/round_robin_arbiter.sv rtl/interconnect/snoopy_coherence_transport.sv rtl/memory/shared_memory_controller.sv rtl/top/sparrow_cluster_top.sv
@@ -21,6 +21,15 @@ milestone-run:
 
 milestone-status:
 	bash scripts/run_milestone.sh --status
+
+sw-check:
+	$(PYTHON) scripts/build_runtime_sw.py check
+
+sw-build:
+	$(PYTHON) scripts/build_runtime_sw.py build
+
+sw-disasm:
+	$(PYTHON) scripts/build_runtime_sw.py disasm
 
 sim-unit:
 	@mkdir -p /tmp/sparrow-cluster-sim
@@ -63,6 +72,45 @@ sim-atomic-random:
 	$(IVERILOG) -g2012 -s tb_atomic_random -o /tmp/sparrow-cluster-sim/atomic_random.vvp rtl/interconnect/coherence_pkg.sv rtl/cache/l1_data_cache.sv rtl/interconnect/snoopy_coherence_transport.sv tb/coherence/tb_atomic_random.sv
 	$(VVP) /tmp/sparrow-cluster-sim/atomic_random.vvp
 
+define run_runtime_case
+	@mkdir -p /tmp/sparrow-cluster-sim
+	$(IVERILOG) -g2012 -s tb_runtime_workload -DPROGRAM_IMAGE=\"build/sw/images/$(1).hex\" -DWORKLOAD_ID=$(2) -DACTIVE_CORES=$(3) -DEXPECTED_RESULT=$(4) -DTIMEOUT_CYCLES=$(5) -o /tmp/sparrow-cluster-sim/$(1).vvp $(RTL) tb/system/tb_runtime_workload.sv
+	$(VVP) /tmp/sparrow-cluster-sim/$(1).vvp
+endef
+
+sim-runtime: sw-build
+	$(call run_runtime_case,runtime_1c,1,1,28672,80000)
+	$(call run_runtime_case,runtime_2c,1,2,28673,80000)
+	$(call run_runtime_case,runtime_4c,1,4,28675,80000)
+
+sim-counter: sw-build
+	$(call run_runtime_case,counter_1c,2,1,8,120000)
+	$(call run_runtime_case,counter_2c,2,2,16,120000)
+	$(call run_runtime_case,counter_4c,2,4,32,120000)
+
+sim-lock: sw-build
+	$(call run_runtime_case,lock_4c,3,4,24,160000)
+
+sim-barrier: sw-build
+	$(call run_runtime_case,barrier_1c,4,1,5,160000)
+	$(call run_runtime_case,barrier_2c,4,2,10,160000)
+	$(call run_runtime_case,barrier_4c,4,4,20,160000)
+
+sim-workloads: sw-build
+	$(call run_runtime_case,prodcons_2c,5,2,6,180000)
+	$(call run_runtime_case,reduction_1c,6,1,36,120000)
+	$(call run_runtime_case,reduction_2c,6,2,36,120000)
+	$(call run_runtime_case,reduction_4c,6,4,36,120000)
+	$(call run_runtime_case,pingpong_2c,7,2,12,180000)
+	$(call run_runtime_case,false_4c,8,4,24,160000)
+	$(call run_runtime_case,padded_4c,9,4,24,160000)
+	$(call run_runtime_case,readmostly_1c,10,1,784,120000)
+	$(call run_runtime_case,readmostly_2c,10,2,1568,120000)
+	$(call run_runtime_case,readmostly_4c,10,4,3136,120000)
+	$(call run_runtime_case,mixed_1c,11,1,4,180000)
+	$(call run_runtime_case,mixed_2c,11,2,8,180000)
+	$(call run_runtime_case,mixed_4c,11,4,16,180000)
+
 sim-cluster:
 	@mkdir -p /tmp/sparrow-cluster-sim
 	$(IVERILOG) -g2012 -s tb_cluster -o /tmp/sparrow-cluster-sim/cluster.vvp $(RTL) tb/system/tb_cluster.sv
@@ -73,4 +121,4 @@ sim-multicore:
 	$(IVERILOG) -g2012 -s tb_m1_multicore -o /tmp/sparrow-cluster-sim/multicore.vvp $(RTL) tb/system/tb_m1_multicore.sv
 	$(VVP) /tmp/sparrow-cluster-sim/multicore.vvp
 
-regress: check docs-check sim-unit sim-l1i sim-l1d sim-snoop-transport sim-msi sim-coherence-random sim-lrsc sim-atomic-random sim-cluster sim-multicore
+regress: check docs-check sw-check sw-build sw-disasm sim-unit sim-l1i sim-l1d sim-snoop-transport sim-msi sim-coherence-random sim-lrsc sim-atomic-random sim-runtime sim-counter sim-lock sim-barrier sim-workloads sim-cluster sim-multicore

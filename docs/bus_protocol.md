@@ -9,3 +9,5 @@ For `BUS_RD` and `BUS_RDX`, a modified owner has priority over SRAM. The ownerâ€
 The production top-level arbitrates the transportâ€™s SRAM word port with the existing adapter path feeding L1I and uncached L1D traffic. Only one SRAM request is presented to the controller, and responses are routed back either to the coherence transport or to the recorded adapter source.
 
 LR/SC adds no new bus command. LR uses `BUS_RD` only on cache miss. Successful SC uses the ordinary store paths: no bus on local `M`, `BUS_UPGR` from local `S`, and no supported success from local `I`. Failed SC does not issue a coherence transaction.
+
+Milestone 7 runtime workloads are linked/generated to use the same request paths as normal software. The workload testbench records transport command counts, invalidations, and interventions but does not change arbitration, serialization, or SRAM mux behavior.

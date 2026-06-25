@@ -7,3 +7,5 @@ The private L1D stores one reservation per core: valid plus a 16-byte-aligned bl
 Reservations are conservative 16-byte cache-block reservations. Any write or ownership acquisition for another word in the same block may invalidate the reservation. The reservation also clears on reset, new LR replacement, every SC attempt, local eviction or replacement of the reserved line, remote `BUS_RDX`, remote `BUS_UPGR`, and remote `BUS_RD` that downgrades a reserved modified line.
 
 Misaligned LR/SC follows the imported Sparrow-V misalignment trap path and does not reach L1D execution. Uncached/MMIO LR returns zero and does not reserve; uncached/MMIO SC returns one and stores nothing. Other AMOs, `.D` variants, word-granularity reservations, and full RV32A are deliberately absent.
+
+Milestone 7 exposes LR/SC through the generated runtime and through the reference wrappers in `sw/runtime/atomic.S`. The software build checker rejects AMOs other than `lr.w` and `sc.w`, compressed instructions, multiply/divide, floating point, and privileged instructions in generated listings.

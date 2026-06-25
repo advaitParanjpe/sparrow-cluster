@@ -7,3 +7,5 @@ Imported Sparrow-V revision `995ea0f9cada63688c9e21e739bd41d6b1c118af` exposes d
 The coherence interface is internal: requester valid/ready, 3-bit command, 16-byte-aligned address, optional 128-bit writeback data, response valid/data/shared/modified/complete/error, and peer snoop valid/command/address/requester plus present/modified/data/ack response. `sparrow_cluster_top` connects all four production L1Ds to this interface and routes transport SRAM words through the same shared memory controller as L1I and uncached traffic.
 
 Hart ID uses `0x10000000`; `0x200..0x20f`, `0x300..0x30f`, `0x400..0x40f`, and `0x600..0x60f` bypass MSI. Invalid requests still receive zero, the only representable error behavior.
+
+Milestone 7 adds Make targets and a generated software image flow, not a hardware interface. Runtime-visible control words use the audited uncached apertures: result/magic at `0x200`, configuration/release at `0x300`, per-hart status at `0x400`, and completion at `0x600`. Cacheable workload data starts at `0x1000` and uses the existing coherent L1D interface.

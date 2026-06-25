@@ -4,5 +4,7 @@
 
 Each L1I uses the adapter IMEM port. Each L1D has two lower paths: uncached/MMIO requests use the adapter DMEM port, while cacheable SRAM requests use the block-oriented coherence requester and snooper ports. The top-level memory mux shares the single SRAM controller between adapter traffic and coherence block transfers.
 
-Testbenches are under `tb/unit`, `tb/coherence`, and `tb/system`; the bare-metal image is under `sw/tests`.
+Testbenches are under `tb/unit`, `tb/coherence`, and `tb/system`; the legacy bare-metal image is under `sw/tests`, and Milestone 7 generated runtime/workload images are produced under ignored `build/sw`.
 The core exports a two-bit DMEM atomic intent to its private L1D. The L1D owns LR/SC reservation state and exposes LR/SC counters.
+
+Software support is organized under `sw/runtime`, `sw/linker`, and `sw/workloads`; `scripts/build_runtime_sw.py` is the executable fallback builder used by the Make targets.

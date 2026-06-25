@@ -8,5 +8,6 @@
 | 4 | implemented | four-requester snoopy transport verification |
 | 5 | implemented | production L1D MSI coherence integration |
 | 6 | implemented | minimal LR.W/SC.W |
+| 7 | implemented | deterministic multicore runtime and workloads |
 
-Milestone 6 does not implement other AMOs, full RV32A, MESI, non-blocking caches, L2, coherent L1I, or SparrowML integration. The active milestone specification remains authoritative for runner scope.
+Milestone 7 does not implement SparrowML, other AMOs, full RV32A, MESI, non-blocking caches, L2, coherent L1I, an operating system, interrupts, or FPGA/ASIC deployment. The active milestone specification remains authoritative for runner scope.

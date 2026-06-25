@@ -9,3 +9,5 @@ Reservations are conservative 16-byte cache-block reservations. Any write or own
 Misaligned LR/SC follows the imported Sparrow-V misalignment trap path and does not reach L1D execution. Uncached/MMIO LR returns zero and does not reserve; uncached/MMIO SC returns one and stores nothing. Other AMOs, `.D` variants, word-granularity reservations, and full RV32A are deliberately absent.
 
 Milestone 7 exposes LR/SC through the generated runtime and through the reference wrappers in `sw/runtime/atomic.S`. The software build checker rejects AMOs other than `lr.w` and `sc.w`, compressed instructions, multiply/divide, floating point, and privileged instructions in generated listings.
+
+Milestone 8 does not change LR/SC. Existing LR/SC regressions remain the authority for atomics, while SparrowML shared-work synchronization uses per-core cacheable completion slots and core-0 reduction to avoid adding locks inside the package-reference compute path.

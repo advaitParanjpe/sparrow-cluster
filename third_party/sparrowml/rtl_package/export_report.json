@@ -1,0 +1,7 @@
+{
+  "format_version": "phase6_export_validation_v1",
+  "hidden_buffer_bytes": 16,
+  "passed": true,
+  "reference_equivalence": "exact",
+  "samples": 12
+}

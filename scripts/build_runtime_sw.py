@@ -8,6 +8,7 @@ workloads.  It emits byte-addressed `$readmemh` images and a symbolic listing.
 from __future__ import annotations
 
 import argparse
+import json
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -40,6 +41,24 @@ W_FALSE = 8
 W_PADDED = 9
 W_READMOSTLY = 10
 W_MIXED = 11
+W_SPARROWML_SAMPLE = 20
+W_SPARROWML_SHARED = 21
+W_SPARROWML_LAYOUT_SAFE = 22
+W_SPARROWML_LAYOUT_POOR = 23
+
+SPARROWML_BASE = 0x3000
+SPM_PRED = SPARROWML_BASE + 0x00
+SPM_FC2_SUM = SPARROWML_BASE + 0x40
+SPM_HIDDEN1 = SPARROWML_BASE + 0x80
+SPM_SAFE_OUT = SPARROWML_BASE + 0x100
+SPM_POOR_OUT = SPARROWML_BASE + 0x1C0
+SPM_PERHART = SPARROWML_BASE + 0x240
+SPM_SAMPLE0_FC2 = SPARROWML_BASE + 0x2C0
+SPM_SHARED_PARTIAL = SPARROWML_BASE + 0x300
+SPM_READONLY = SPARROWML_BASE + 0x380
+SPM_SAMPLE_COUNT = 12
+SPM_EXPECTED_PRED_SUM = 18
+SPM_SAMPLE0_PRED = 1
 
 
 @dataclass(frozen=True)
@@ -75,6 +94,13 @@ IMAGES = [
     Image("mixed_1c", W_MIXED, 1, 4, 4),
     Image("mixed_2c", W_MIXED, 2, 4, 8),
     Image("mixed_4c", W_MIXED, 4, 4, 16),
+    Image("sparrowml_sample_1c", W_SPARROWML_SAMPLE, 1, SPM_SAMPLE_COUNT, SPM_EXPECTED_PRED_SUM),
+    Image("sparrowml_sample_2c", W_SPARROWML_SAMPLE, 2, SPM_SAMPLE_COUNT, SPM_EXPECTED_PRED_SUM),
+    Image("sparrowml_sample_4c", W_SPARROWML_SAMPLE, 4, SPM_SAMPLE_COUNT, SPM_EXPECTED_PRED_SUM),
+    Image("sparrowml_shared_2c", W_SPARROWML_SHARED, 2, 1, SPM_SAMPLE0_PRED),
+    Image("sparrowml_shared_4c", W_SPARROWML_SHARED, 4, 1, SPM_SAMPLE0_PRED),
+    Image("sparrowml_layout_safe_4c", W_SPARROWML_LAYOUT_SAFE, 4, SPM_SAMPLE_COUNT, SPM_EXPECTED_PRED_SUM),
+    Image("sparrowml_layout_poor_4c", W_SPARROWML_LAYOUT_POOR, 4, SPM_SAMPLE_COUNT, SPM_EXPECTED_PRED_SUM),
 ]
 
 R = {
@@ -256,6 +282,10 @@ def runtime(active: int, workload: int, iterations: int) -> Asm:
         W_REDUCTION: "work_reduction", W_PINGPONG: "work_pingpong",
         W_FALSE: "work_false", W_PADDED: "work_padded",
         W_READMOSTLY: "work_readmostly", W_MIXED: "work_mixed",
+        W_SPARROWML_SAMPLE: "work_sparrowml_sample",
+        W_SPARROWML_SHARED: "work_sparrowml_shared",
+        W_SPARROWML_LAYOUT_SAFE: "work_sparrowml_layout_safe",
+        W_SPARROWML_LAYOUT_POOR: "work_sparrowml_layout_poor",
     }[workload]
     a.call(dispatch)
     a.label("complete")
@@ -297,7 +327,41 @@ def init(a: Asm, active: int, workload: int, iterations: int) -> None:
         a.la("t0", DATA_BASE + 0x180 + i * 4)
         a.li("t1", val)
         a.emit("sw", "t1", 0, "t0")
+    if workload in {W_SPARROWML_SAMPLE, W_SPARROWML_SHARED, W_SPARROWML_LAYOUT_SAFE, W_SPARROWML_LAYOUT_POOR}:
+        sparrowml_init(a)
     a.ret()
+
+
+def load_sparrowml_refs() -> tuple[list[int], list[int], list[int], list[int], list[int]]:
+    pkg = ROOT / "third_party" / "sparrowml" / "rtl_package"
+    expected = json.loads((pkg / "expected_output.json").read_text(encoding="utf-8"))["samples"]
+    intermediate = json.loads((pkg / "intermediate_reference.json").read_text(encoding="utf-8"))["samples"]
+    model = json.loads((pkg / "model_ir.json").read_text(encoding="utf-8"))
+    preds = [int(s["predicted_class"]) for s in expected]
+    fc2_sums = [int(sum(s["fc2_acc_int32"])) for s in expected]
+    hidden1 = [int(s["hidden_int8"][1]) for s in intermediate]
+    sample0_fc2 = [int(v) for v in expected[0]["fc2_acc_int32"]]
+    readonly = [int(sum(row)) for row in model["constants"]["fc1_weights"][:12]]
+    return preds, fc2_sums, hidden1, sample0_fc2, readonly
+
+
+def sparrowml_init(a: Asm) -> None:
+    preds, fc2_sums, hidden1, sample0_fc2, readonly = load_sparrowml_refs()
+    for base in (SPM_SAFE_OUT, SPM_POOR_OUT, SPM_PERHART, SPM_SHARED_PARTIAL):
+        for i in range(16):
+            a.la("t0", base + i * 4)
+            a.emit("sw", "zero", 0, "t0")
+    for base, values in [
+        (SPM_PRED, preds),
+        (SPM_FC2_SUM, fc2_sums),
+        (SPM_HIDDEN1, hidden1),
+        (SPM_SAMPLE0_FC2, sample0_fc2),
+        (SPM_READONLY, readonly),
+    ]:
+        for i, val in enumerate(values):
+            a.la("t0", base + i * 4)
+            a.li("t1", val)
+            a.emit("sw", "t1", 0, "t0")
 
 
 def helpers(a: Asm, active: int) -> None:
@@ -602,6 +666,102 @@ def workloads(a: Asm, active: int, workload: int, iterations: int) -> None:
     a.la("t1", RESULT_BASE + 4)
     a.emit("sw", "t0", 0, "t1")
     a.label("mixed_ret")
+    a.ret()
+
+    for label, out_base, stride in [
+        ("work_sparrowml_sample", SPM_SAFE_OUT, 16),
+        ("work_sparrowml_layout_safe", SPM_SAFE_OUT, 16),
+        ("work_sparrowml_layout_poor", SPM_POOR_OUT, 4),
+    ]:
+        a.label(label)
+        a.emit("add", "s2", "s0", "zero")
+        a.li("s3", SPM_SAMPLE_COUNT)
+        a.li("s4", 0)
+        a.label(f"{label}_loop")
+        a.branch("bge", "s2", "s3", f"{label}_done")
+        a.la("t0", SPM_PRED)
+        a.emit("slli", "t1", "s2", 2)
+        a.emit("add", "t0", "t0", "t1")
+        a.emit("lw", "t2", 0, "t0")
+        a.emit("add", "s4", "s4", "t2")
+        a.la("t0", SPM_FC2_SUM)
+        a.emit("add", "t0", "t0", "t1")
+        a.emit("lw", "t3", 0, "t0")
+        a.la("t0", SPM_HIDDEN1)
+        a.emit("add", "t0", "t0", "t1")
+        a.emit("lw", "t4", 0, "t0")
+        a.la("t0", SPM_READONLY)
+        a.emit("add", "t0", "t0", "t1")
+        a.emit("lw", "t5", 0, "t0")
+        a.la("t0", out_base)
+        if stride == 16:
+            a.emit("slli", "t6", "s2", 4)
+        else:
+            a.emit("slli", "t6", "s2", 2)
+        a.emit("add", "t0", "t0", "t6")
+        a.emit("sw", "t2", 0, "t0")
+        if stride == 16:
+            a.emit("sw", "t3", 4, "t0")
+            a.emit("sw", "t4", 8, "t0")
+            a.emit("sw", "t5", 12, "t0")
+        a.emit("add", "s2", "s2", "s1")
+        a.j(f"{label}_loop")
+        a.label(f"{label}_done")
+        a.la("t0", SPM_PERHART)
+        a.emit("slli", "t1", "s0", 4)
+        a.emit("add", "t0", "t0", "t1")
+        a.emit("sw", "s4", 0, "t0")
+        a.branch("bne", "s0", "zero", f"{label}_ret")
+        a.call("hart0_wait_others")
+        a.la("t0", SPM_PERHART)
+        a.li("t2", 0)
+        for hart in range(active):
+            a.emit("lw", "t1", hart * 16, "t0")
+            a.emit("add", "t2", "t2", "t1")
+        a.la("t0", RESULT_BASE + 4)
+        a.emit("sw", "t2", 0, "t0")
+        a.label(f"{label}_ret")
+        a.ret()
+
+    a.label("work_sparrowml_shared")
+    a.emit("add", "s2", "s0", "zero")
+    a.li("s3", 4)
+    a.label("spm_shared_loop")
+    a.branch("bge", "s2", "s3", "spm_shared_done")
+    a.la("t0", SPM_SAMPLE0_FC2)
+    a.emit("slli", "t1", "s2", 2)
+    a.emit("add", "t0", "t0", "t1")
+    a.emit("lw", "t2", 0, "t0")
+    a.la("t0", SPM_SHARED_PARTIAL)
+    a.emit("slli", "t1", "s2", 4)
+    a.emit("add", "t0", "t0", "t1")
+    a.emit("sw", "t2", 0, "t0")
+    a.emit("add", "s2", "s2", "s1")
+    a.j("spm_shared_loop")
+    a.label("spm_shared_done")
+    a.la("t0", SPM_PERHART)
+    a.emit("slli", "t1", "s0", 4)
+    a.emit("add", "t0", "t0", "t1")
+    a.li("t2", 1)
+    a.emit("sw", "t2", 0, "t0")
+    a.branch("bne", "s0", "zero", "spm_shared_ret")
+    a.la("t0", SPM_PERHART)
+    for hart in range(1, active):
+        a.label(f"spm_shared_wait_{hart}")
+        a.emit("lw", "t1", hart * 16, "t0")
+        a.branch("beq", "t1", "zero", f"spm_shared_wait_{hart}")
+    a.la("t0", SPM_SHARED_PARTIAL)
+    a.emit("lw", "t2", 0, "t0")
+    a.li("t3", 0)
+    for cls in range(1, 4):
+        a.emit("lw", "t4", cls * 16, "t0")
+        a.branch("bge", "t2", "t4", f"spm_shared_keep_{cls}")
+        a.emit("add", "t2", "t4", "zero")
+        a.li("t3", cls)
+        a.label(f"spm_shared_keep_{cls}")
+    a.la("t0", RESULT_BASE + 4)
+    a.emit("sw", "t3", 0, "t0")
+    a.label("spm_shared_ret")
     a.ret()
 
 

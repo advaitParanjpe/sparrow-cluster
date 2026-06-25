@@ -1,0 +1,97 @@
+{
+  "fc1": {
+    "cycles": {
+      "availability": "measured",
+      "unit": "count",
+      "value": 23232
+    },
+    "dense_conceptual_int8_multiplications": {
+      "availability": "derived",
+      "unit": "count",
+      "value": 3072
+    },
+    "dense_dot_products": {
+      "availability": "measured",
+      "unit": "count",
+      "value": 768
+    },
+    "executed_int8_multiplications": {
+      "availability": "derived",
+      "unit": "count",
+      "value": null
+    },
+    "retired_instructions": {
+      "availability": "measured",
+      "unit": "count",
+      "value": 5232
+    },
+    "skipped_int8_multiplications": {
+      "availability": "derived",
+      "unit": "count",
+      "value": null
+    },
+    "sparse_dot_products": {
+      "availability": "measured",
+      "unit": "count",
+      "value": 0
+    },
+    "vector_loads": {
+      "availability": "measured",
+      "unit": "count",
+      "value": 1536
+    },
+    "vector_stores": {
+      "availability": "measured",
+      "unit": "count",
+      "value": 0
+    }
+  },
+  "fc2": {
+    "cycles": {
+      "availability": "measured",
+      "unit": "count",
+      "value": 5808
+    },
+    "dense_conceptual_int8_multiplications": {
+      "availability": "derived",
+      "unit": "count",
+      "value": 768
+    },
+    "dense_dot_products": {
+      "availability": "measured",
+      "unit": "count",
+      "value": 192
+    },
+    "executed_int8_multiplications": {
+      "availability": "derived",
+      "unit": "count",
+      "value": null
+    },
+    "retired_instructions": {
+      "availability": "measured",
+      "unit": "count",
+      "value": 1308
+    },
+    "skipped_int8_multiplications": {
+      "availability": "derived",
+      "unit": "count",
+      "value": null
+    },
+    "sparse_dot_products": {
+      "availability": "measured",
+      "unit": "count",
+      "value": 0
+    },
+    "vector_loads": {
+      "availability": "measured",
+      "unit": "count",
+      "value": 384
+    },
+    "vector_stores": {
+      "availability": "measured",
+      "unit": "count",
+      "value": 0
+    }
+  },
+  "provenance": "fc1 totals are partitioned simulation totals, not optimized monolithic latency"
+}

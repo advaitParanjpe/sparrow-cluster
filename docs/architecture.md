@@ -16,4 +16,6 @@ The core-to-L1D request carries explicit atomic intent: normal, `LR.W`, or `SC.W
 
 The SRAM controller remains byte-addressed and fixed-latency. `0x10000000` is a read-only core-local hart-ID aperture. Invalid or unmapped accesses return zero because the audited Sparrow-V memory interface has no error signal. LR/SC is unsupported for uncached/MMIO apertures.
 
-Milestone 7 software images boot all four harts from reset, select per-hart stacks, use uncached control/status apertures for deterministic testbench observation, and place workload data at `0x1000` so normal shared state traverses the coherent L1D/MSI path. The milestone adds no new cache, bus, core, or memory microarchitecture.
+Milestone 7 software images boot all four harts from reset, select per-hart stacks, use uncached control/status apertures for deterministic testbench observation, and place workload data at `0x1000` so normal shared state traverses the coherent L1D/MSI path.
+
+Milestone 8 imports the frozen SparrowML Phase 8 WISDM RTL package under `third_party/sparrowml/` and adds generated runtime images for package-reference validation, sample-level parallelism, shared-work fc2-logit partitioning, and safe versus poor output placement. The SparrowML runtime data region begins at `0x3000`, remains cacheable, and exercises the same private L1I, coherent private L1D, snoopy transport, and shared SRAM path as the Milestone 7 workloads. The milestone adds no new cache, bus, core, ISA, or memory microarchitecture.

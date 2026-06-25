@@ -1,0 +1,9 @@
+{
+  "commands": [
+    "fc1 dense int8",
+    "ReLU",
+    "requantize hidden int8",
+    "fc2 dense int8"
+  ],
+  "format_version": "sparrowml_symbolic_program_v2"
+}

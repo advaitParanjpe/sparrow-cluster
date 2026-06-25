@@ -1,0 +1,114 @@
+{
+  "format_version": "wisdm_phase8c_selection_v1",
+  "samples": [
+    {
+      "fp32_prediction": 1,
+      "int8_prediction": 1,
+      "selection_reason": "lowest_canonical_correct_int8",
+      "subject_id": "1638",
+      "true_class": "jogging",
+      "true_class_id": 1,
+      "window_id": "wisdm-002817d5a9ca5903b0e0"
+    },
+    {
+      "fp32_prediction": 0,
+      "int8_prediction": 0,
+      "selection_reason": "lowest_canonical_correct_int8",
+      "subject_id": "1619",
+      "true_class": "walking",
+      "true_class_id": 0,
+      "window_id": "wisdm-00299c1adcfb5e6033a4"
+    },
+    {
+      "fp32_prediction": 1,
+      "int8_prediction": 1,
+      "selection_reason": "lowest_canonical_correct_int8",
+      "subject_id": "1600",
+      "true_class": "jogging",
+      "true_class_id": 1,
+      "window_id": "wisdm-004b9cf8fe7c189dab88"
+    },
+    {
+      "fp32_prediction": 0,
+      "int8_prediction": 0,
+      "selection_reason": "lowest_canonical_correct_int8",
+      "subject_id": "1643",
+      "true_class": "walking",
+      "true_class_id": 0,
+      "window_id": "wisdm-006868216569cc532476"
+    },
+    {
+      "fp32_prediction": 3,
+      "int8_prediction": 3,
+      "selection_reason": "lowest_canonical_correct_int8",
+      "subject_id": "1633",
+      "true_class": "standing",
+      "true_class_id": 3,
+      "window_id": "wisdm-007317e72be5d0a632f2"
+    },
+    {
+      "fp32_prediction": 2,
+      "int8_prediction": 2,
+      "selection_reason": "lowest_canonical_correct_int8",
+      "subject_id": "1636",
+      "true_class": "sitting",
+      "true_class_id": 2,
+      "window_id": "wisdm-00defbbf3ed8852ccb5f"
+    },
+    {
+      "fp32_prediction": 0,
+      "int8_prediction": 0,
+      "selection_reason": "lowest_canonical_int8_misclassification",
+      "subject_id": "1633",
+      "true_class": "jogging",
+      "true_class_id": 1,
+      "window_id": "wisdm-010de04c5cccf956e7f2"
+    },
+    {
+      "fp32_prediction": 2,
+      "int8_prediction": 2,
+      "selection_reason": "lowest_canonical_correct_int8",
+      "subject_id": "1600",
+      "true_class": "sitting",
+      "true_class_id": 2,
+      "window_id": "wisdm-012641122551de7990be"
+    },
+    {
+      "fp32_prediction": 3,
+      "int8_prediction": 3,
+      "selection_reason": "lowest_canonical_correct_int8",
+      "subject_id": "1600",
+      "true_class": "standing",
+      "true_class_id": 3,
+      "window_id": "wisdm-01d8dc8dd3ae3a3c3f9a"
+    },
+    {
+      "fp32_prediction": 3,
+      "int8_prediction": 3,
+      "selection_reason": "lowest_canonical_int8_misclassification",
+      "subject_id": "1638",
+      "true_class": "sitting",
+      "true_class_id": 2,
+      "window_id": "wisdm-05da92db1c190eb0ea24"
+    },
+    {
+      "fp32_prediction": 1,
+      "int8_prediction": 1,
+      "selection_reason": "lowest_canonical_int8_misclassification",
+      "subject_id": "1643",
+      "true_class": "walking",
+      "true_class_id": 0,
+      "window_id": "wisdm-06961e44996e6c7be77f"
+    },
+    {
+      "fp32_prediction": 3,
+      "int8_prediction": 2,
+      "selection_reason": "lowest_canonical_int8_misclassification",
+      "subject_id": "1607",
+      "true_class": "standing",
+      "true_class_id": 3,
+      "window_id": "wisdm-0aabe79822016ea705ec"
+    }
+  ],
+  "selection_policy": "test subjects only; two lowest correct and one lowest misclassified per true class"
+}

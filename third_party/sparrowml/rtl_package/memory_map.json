@@ -1,0 +1,109 @@
+{
+  "byte_order": "little-endian",
+  "format_version": "sparrowml_memory_map_v2",
+  "regions": [
+    {
+      "alignment": 4,
+      "byte_length": 16,
+      "byte_offset": 0,
+      "element_type": "int8",
+      "logical_shape": [
+        16
+      ],
+      "name": "input",
+      "source_tensor": "input_int8"
+    },
+    {
+      "alignment": 4,
+      "byte_length": 256,
+      "byte_offset": 16,
+      "element_type": "int8",
+      "logical_shape": [
+        16,
+        16
+      ],
+      "name": "fc1_weights",
+      "source_tensor": "fc1_weights"
+    },
+    {
+      "alignment": 4,
+      "byte_length": 64,
+      "byte_offset": 272,
+      "element_type": "int32",
+      "logical_shape": [
+        16
+      ],
+      "name": "fc1_bias",
+      "source_tensor": "fc1_bias"
+    },
+    {
+      "alignment": 4,
+      "byte_length": 64,
+      "byte_offset": 336,
+      "element_type": "float32",
+      "logical_shape": [
+        16
+      ],
+      "name": "fc1_scales",
+      "source_tensor": "fc1_scales"
+    },
+    {
+      "alignment": 4,
+      "byte_length": 16,
+      "byte_offset": 400,
+      "element_type": "int8",
+      "logical_shape": [
+        16
+      ],
+      "name": "hidden",
+      "source_tensor": "hidden_int8"
+    },
+    {
+      "alignment": 4,
+      "byte_length": 64,
+      "byte_offset": 416,
+      "element_type": "int8",
+      "logical_shape": [
+        4,
+        16
+      ],
+      "name": "fc2_weights",
+      "source_tensor": "fc2_weights"
+    },
+    {
+      "alignment": 4,
+      "byte_length": 16,
+      "byte_offset": 480,
+      "element_type": "int32",
+      "logical_shape": [
+        4
+      ],
+      "name": "fc2_bias",
+      "source_tensor": "fc2_bias"
+    },
+    {
+      "alignment": 4,
+      "byte_length": 16,
+      "byte_offset": 496,
+      "element_type": "float32",
+      "logical_shape": [
+        4
+      ],
+      "name": "fc2_scales",
+      "source_tensor": "fc2_scales"
+    },
+    {
+      "alignment": 4,
+      "byte_length": 16,
+      "byte_offset": 512,
+      "element_type": "int32",
+      "logical_shape": [
+        4
+      ],
+      "name": "output",
+      "source_tensor": "fc2_acc_int32"
+    }
+  ],
+  "target_capacity_bytes": 4096,
+  "total_memory_bytes": 528
+}

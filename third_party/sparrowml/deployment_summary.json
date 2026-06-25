@@ -1,0 +1,11 @@
+{
+  "all_valid": true,
+  "fc1_exact_match_count": 12,
+  "fc2_exact_match_count": 12,
+  "hidden_exact_match_count": 12,
+  "package_identity": "677d9de6d237573a056e6c2183b7d3ffc2a1d07ac026c59960c38a609b697ac6",
+  "package_size_bytes": 47963,
+  "prediction_exact_match_count": 12,
+  "scratchpad_usage_bytes": 528,
+  "selected_sample_count": 12
+}

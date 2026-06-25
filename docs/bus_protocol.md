@@ -11,3 +11,5 @@ The production top-level arbitrates the transport’s SRAM word port with the ex
 LR/SC adds no new bus command. LR uses `BUS_RD` only on cache miss. Successful SC uses the ordinary store paths: no bus on local `M`, `BUS_UPGR` from local `S`, and no supported success from local `I`. Failed SC does not issue a coherence transaction.
 
 Milestone 7 runtime workloads are linked/generated to use the same request paths as normal software. The workload testbench records transport command counts, invalidations, and interventions but does not change arbitration, serialization, or SRAM mux behavior.
+
+Milestone 8 SparrowML images use the same serialized transport. Sample-level, shared-work, and layout experiments report the transport command mix (`BUS_RD`, `BUS_RDX`, `BUS_UPGR`), invalidations, interventions, and aggregate L1D hits/misses from the existing runtime testbench; no arbitration, timeout, SRAM mux, or bus transaction format is changed.

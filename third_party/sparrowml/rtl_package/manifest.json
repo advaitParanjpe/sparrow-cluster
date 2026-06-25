@@ -1,0 +1,224 @@
+{
+  "checkpoint_sha256": "cfc427d0456d1884db0d8a151f43d76029663e3e9f3eb642e45afa411abc7f31",
+  "class_order": [
+    "walking",
+    "jogging",
+    "sitting",
+    "standing"
+  ],
+  "dataset_identity": "WISDM phone accelerometer",
+  "feature_order": [
+    "x_mean",
+    "y_mean",
+    "z_mean",
+    "magnitude_mean",
+    "x_std",
+    "y_std",
+    "z_std",
+    "magnitude_std",
+    "magnitude_min",
+    "magnitude_max",
+    "magnitude_rms",
+    "magnitude_energy",
+    "magnitude_mean_absolute_difference",
+    "magnitude_zero_crossing_rate",
+    "magnitude_dominant_frequency_magnitude",
+    "magnitude_spectral_entropy"
+  ],
+  "file_hashes": {
+    "expected_output.json": "2ef1743eb3bf6e7110b65696ed7105a7e9655f81e3da86d09181e15dda3d0c41",
+    "input.json": "e42b59a7ebb70c960a975372a42d87a16b7675a8efeaeee2c9fc8729becb501f",
+    "input_data.bin": "234bf3ade1135bcc88f2baed3d16b5cd5cd25c081b69fd8cbcf8b283ebea6e7e",
+    "intermediate_reference.json": "c31fc5812a06ae33b251cd7aa2b03f2135f0835071783f3d2a80edb6097d12fd",
+    "memory_map.json": "275f2ffd725382dab6e4999db60fdcc396a6ddcc0097368a393a6154cac88b09",
+    "model_data.bin": "9538ecd22d4efc04b1605b2b06cacc4252a716cd83b8558e73ec09100732cb84",
+    "model_ir.json": "01a69357bbeae2e1f70e766761a40c60533e95d414d4c46c9891b07897880d4f",
+    "program.json": "9ed937b10d7b6fd04a4912cf6abfca06e5fe9ef005c929cc2954b144aab3b5e5"
+  },
+  "ir_version": "sparrowml_ir_v2_multilayer",
+  "memory_region_summary": [
+    {
+      "alignment": 4,
+      "byte_length": 16,
+      "byte_offset": 0,
+      "element_type": "int8",
+      "logical_shape": [
+        16
+      ],
+      "name": "input",
+      "source_tensor": "input_int8"
+    },
+    {
+      "alignment": 4,
+      "byte_length": 256,
+      "byte_offset": 16,
+      "element_type": "int8",
+      "logical_shape": [
+        16,
+        16
+      ],
+      "name": "fc1_weights",
+      "source_tensor": "fc1_weights"
+    },
+    {
+      "alignment": 4,
+      "byte_length": 64,
+      "byte_offset": 272,
+      "element_type": "int32",
+      "logical_shape": [
+        16
+      ],
+      "name": "fc1_bias",
+      "source_tensor": "fc1_bias"
+    },
+    {
+      "alignment": 4,
+      "byte_length": 64,
+      "byte_offset": 336,
+      "element_type": "float32",
+      "logical_shape": [
+        16
+      ],
+      "name": "fc1_scales",
+      "source_tensor": "fc1_scales"
+    },
+    {
+      "alignment": 4,
+      "byte_length": 16,
+      "byte_offset": 400,
+      "element_type": "int8",
+      "logical_shape": [
+        16
+      ],
+      "name": "hidden",
+      "source_tensor": "hidden_int8"
+    },
+    {
+      "alignment": 4,
+      "byte_length": 64,
+      "byte_offset": 416,
+      "element_type": "int8",
+      "logical_shape": [
+        4,
+        16
+      ],
+      "name": "fc2_weights",
+      "source_tensor": "fc2_weights"
+    },
+    {
+      "alignment": 4,
+      "byte_length": 16,
+      "byte_offset": 480,
+      "element_type": "int32",
+      "logical_shape": [
+        4
+      ],
+      "name": "fc2_bias",
+      "source_tensor": "fc2_bias"
+    },
+    {
+      "alignment": 4,
+      "byte_length": 16,
+      "byte_offset": 496,
+      "element_type": "float32",
+      "logical_shape": [
+        4
+      ],
+      "name": "fc2_scales",
+      "source_tensor": "fc2_scales"
+    },
+    {
+      "alignment": 4,
+      "byte_length": 16,
+      "byte_offset": 512,
+      "element_type": "int32",
+      "logical_shape": [
+        4
+      ],
+      "name": "output",
+      "source_tensor": "fc2_acc_int32"
+    }
+  ],
+  "model_name": "Linear(16,16)->ReLU->Linear(16,4)",
+  "no_absolute_dataset_paths": true,
+  "no_sparrowv_execution": true,
+  "package_format_version": "sparrowml_multilayer_package_v1",
+  "preprocessing": {
+    "feature_order": [
+      "x_mean",
+      "y_mean",
+      "z_mean",
+      "magnitude_mean",
+      "x_std",
+      "y_std",
+      "z_std",
+      "magnitude_std",
+      "magnitude_min",
+      "magnitude_max",
+      "magnitude_rms",
+      "magnitude_energy",
+      "magnitude_mean_absolute_difference",
+      "magnitude_zero_crossing_rate",
+      "magnitude_dominant_frequency_magnitude",
+      "magnitude_spectral_entropy"
+    ],
+    "fit_split": "train",
+    "mean": [
+      -0.5742610692977905,
+      -1.275130271911621,
+      0.22734463214874268,
+      10.864768028259277,
+      2.6699697971343994,
+      2.9801576137542725,
+      2.328279495239258,
+      2.9890904426574707,
+      6.165313720703125,
+      19.00751304626465,
+      11.600544929504395,
+      141.8729248046875,
+      1.8950002193450928,
+      0.3098128139972687,
+      102.04075622558594,
+      0.7127543687820435
+    ],
+    "std": [
+      5.185455799102783,
+      7.135110378265381,
+      3.357607841491699,
+      1.9035967588424683,
+      3.269688129425049,
+      3.5118179321289062,
+      2.517676591873169,
+      3.3573384284973145,
+      3.4534788131713867,
+      11.36307430267334,
+      2.7017157077789307,
+      76.46910858154297,
+      2.1521432399749756,
+      0.13208802044391632,
+      122.4885482788086,
+      0.14772863686084747
+    ],
+    "version": "wisdm_standardize_train_v1",
+    "zero_variance_replaced_with": 1.0
+  },
+  "quantization": {
+    "hidden_range": [
+      0,
+      127
+    ],
+    "hidden_scale": 0.14026430084949404,
+    "input_scale": 0.0677455691840705,
+    "rounding": "NumPy rint ties-to-even",
+    "zero_points": {
+      "hidden": 0,
+      "input": 0
+    }
+  },
+  "selected_canonical_test_sample": {
+    "subject_id": "1638",
+    "window_id": "wisdm-002817d5a9ca5903b0e0"
+  },
+  "subject_split_identity": "e25a296cece79e14d6be40613f040c9b91ea6b69fa6fc61ecf934e3ff50f96ca",
+  "target_name": "sparrow_v"
+}

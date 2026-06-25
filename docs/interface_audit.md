@@ -9,3 +9,5 @@ The coherence interface is internal: requester valid/ready, 3-bit command, 16-by
 Hart ID uses `0x10000000`; `0x200..0x20f`, `0x300..0x30f`, `0x400..0x40f`, and `0x600..0x60f` bypass MSI. Invalid requests still receive zero, the only representable error behavior.
 
 Milestone 7 adds Make targets and a generated software image flow, not a hardware interface. Runtime-visible control words use the audited uncached apertures: result/magic at `0x200`, configuration/release at `0x300`, per-hart status at `0x400`, and completion at `0x600`. Cacheable workload data starts at `0x1000` and uses the existing coherent L1D interface.
+
+Milestone 8 adds package files, Make targets, and generated SparrowML workload images only. It does not alter the Sparrow-V IMEM/DMEM contract, the L1I/L1D CPU-side contracts, the coherence requester/snooper contract, LR/SC metadata, or the uncached aperture definitions. SparrowML results are observed through the same uncached result/completion words as Milestone 7.

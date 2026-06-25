@@ -20,3 +20,5 @@ Snoops are answered through the transport snooper port. `BUS_RD` to an `M` line 
 
 Uncached addresses are unchanged: `0x200..0x20f`, `0x300..0x30f`, `0x400..0x40f`, `0x600..0x60f`, and `0x10000000` bypass L1D allocation and coherence.
 LR to these apertures returns zero and does not reserve; SC to these apertures fails with return value one and no store.
+
+Milestone 8 SparrowML workload data, read-only summaries, outputs, and shared-work partials are ordinary cacheable SRAM. Safe-layout runs align independently written outputs to separate 16-byte cache blocks; poor-layout runs intentionally pack independent outputs into shared blocks to expose extra invalidation/intervention behavior. Dirty cacheable output buffers are not inspected directly from SRAM at completion; correctness is published through the existing uncached result words.

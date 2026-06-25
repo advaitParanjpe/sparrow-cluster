@@ -1,0 +1,97 @@
+{
+  "format_version": "sparrow_cluster_sparrowml_package_manifest_v1",
+  "package": "phase8_wisdm_rtl_package",
+  "source_repository": "../sparrow-ml",
+  "source_revision": "47538b0ed46c759191d2274506a01c2eeb2bee83",
+  "import_date": "2026-06-25",
+  "selected_package_path": "artifacts/phase8_wisdm/phase8c/rtl_package",
+  "normal_regression_uses_sibling_repository": false,
+  "copied_files": [
+    {
+      "path": "rtl_package/README.md",
+      "source_path": "artifacts/phase8_wisdm/phase8c/rtl_package/README.md",
+      "sha256": "7e6991b9f0e4c73bf09bb6a8db0a1820b4cf13aed50bcb85b87812882e7d2b34",
+      "size_bytes": 108
+    },
+    {
+      "path": "rtl_package/expected_output.json",
+      "source_path": "artifacts/phase8_wisdm/phase8c/rtl_package/expected_output.json",
+      "sha256": "2ef1743eb3bf6e7110b65696ed7105a7e9655f81e3da86d09181e15dda3d0c41",
+      "size_bytes": 3974
+    },
+    {
+      "path": "rtl_package/export_report.json",
+      "source_path": "artifacts/phase8_wisdm/phase8c/rtl_package/export_report.json",
+      "sha256": "389b443ce8b9c0dcf79c3180abf3560ca1bae7c21713356213649321c0a32508",
+      "size_bytes": 154
+    },
+    {
+      "path": "rtl_package/input.json",
+      "source_path": "artifacts/phase8_wisdm/phase8c/rtl_package/input.json",
+      "sha256": "e42b59a7ebb70c960a975372a42d87a16b7675a8efeaeee2c9fc8729becb501f",
+      "size_bytes": 5640
+    },
+    {
+      "path": "rtl_package/intermediate_reference.json",
+      "source_path": "artifacts/phase8_wisdm/phase8c/rtl_package/intermediate_reference.json",
+      "sha256": "c31fc5812a06ae33b251cd7aa2b03f2135f0835071783f3d2a80edb6097d12fd",
+      "size_bytes": 24551
+    },
+    {
+      "path": "rtl_package/manifest.json",
+      "source_path": "artifacts/phase8_wisdm/phase8c/rtl_package/manifest.json",
+      "sha256": "677d9de6d237573a056e6c2183b7d3ffc2a1d07ac026c59960c38a609b697ac6",
+      "size_bytes": 5612
+    },
+    {
+      "path": "rtl_package/memory_map.json",
+      "source_path": "artifacts/phase8_wisdm/phase8c/rtl_package/memory_map.json",
+      "sha256": "275f2ffd725382dab6e4999db60fdcc396a6ddcc0097368a393a6154cac88b09",
+      "size_bytes": 2203
+    },
+    {
+      "path": "rtl_package/model_ir.json",
+      "source_path": "artifacts/phase8_wisdm/phase8c/rtl_package/model_ir.json",
+      "sha256": "01a69357bbeae2e1f70e766761a40c60533e95d414d4c46c9891b07897880d4f",
+      "size_bytes": 4839
+    },
+    {
+      "path": "rtl_package/program.json",
+      "source_path": "artifacts/phase8_wisdm/phase8c/rtl_package/program.json",
+      "sha256": "9ed937b10d7b6fd04a4912cf6abfca06e5fe9ef005c929cc2954b144aab3b5e5",
+      "size_bytes": 162
+    },
+    {
+      "path": "selected_samples.json",
+      "source_path": "artifacts/phase8_wisdm/phase8c/selected_samples.json",
+      "sha256": "6f1ce2d4d7f9656ea3869acf99d3a50c04ab7cd2aa82ddbf34f3b84e2324b49f",
+      "size_bytes": 3355
+    },
+    {
+      "path": "rtl_validation_summary.json",
+      "source_path": "artifacts/phase8_wisdm/phase8c/rtl_validation_summary.json",
+      "sha256": "c9a965c302b8a8017bc1166d8719a602c100d0eed9e153dad9ecde0d5c2bfcd6",
+      "size_bytes": 189
+    },
+    {
+      "path": "deployment_summary.json",
+      "source_path": "artifacts/phase8_wisdm/phase8c/deployment_summary.json",
+      "sha256": "d7051dd6c582079f80678e4af0e2c92957c487029e873d545ff101c99e8fa228",
+      "size_bytes": 343
+    },
+    {
+      "path": "counter_summary.json",
+      "source_path": "artifacts/phase8_wisdm/phase8c/counter_summary.json",
+      "sha256": "42e988ee98b75b11aa7bfbe375b9aa15d441f8f82035cc151c8ccf7a091fca85",
+      "size_bytes": 2166
+    }
+  ],
+  "excluded_files": [
+    "phase8b/fp32_checkpoint.pt",
+    "phase8b/training_metrics.json",
+    "phase8a dataset manifests",
+    "rtl_package/model_data.bin",
+    "rtl_package/input_data.bin",
+    "per-sample logs and duplicate host-run evidence"
+  ]
+}

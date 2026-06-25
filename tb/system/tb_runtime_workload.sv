@@ -88,6 +88,8 @@ module tb_runtime_workload;
       $fatal(1, "missing LR/SC activity workload=%0d", WORKLOAD);
     if ((WORKLOAD == 7 || WORKLOAD == 8 || WORKLOAD == 9) && dut.coh_tx_count == 0)
       $fatal(1, "missing coherence traffic workload=%0d", WORKLOAD);
+    if (WORKLOAD >= 20 && dut.coh_tx_count == 0)
+      $fatal(1, "missing SparrowML coherence traffic workload=%0d", WORKLOAD);
 
     $display("PASS runtime workload=%0d active=%0d cycles=%0d result=%0d tx=%0d rd=%0d rdx=%0d upgr=%0d inv=%0d int=%0d lr0=%0d sc0=%0d l1d_hits=%0d l1d_misses=%0d",
              WORKLOAD, ACTIVE, cycles, word(32'h204), dut.coh_tx_count, dut.coh_bus_rd_count,

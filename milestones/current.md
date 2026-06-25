@@ -1,4 +1,4 @@
-# Milestone 5 — MSI Coherence Integration
+# Milestone 6 — Minimal LR.W / SC.W Atomic Synchronization
 
 ## Status
 
@@ -6,22 +6,24 @@ READY
 
 ## Goal
 
-Integrate snoopy MSI coherence into the four production private L1D caches using the completed Milestone 4 coherence transport.
+Implement a minimal coherent `LR.W` / `SC.W` pair for Sparrow-Cluster.
 
 At completion:
 
-- all four L1D caches participate in coherence;
-- cacheable shared writable memory behaves coherently;
-- loads and stores observe the latest globally ordered value;
-- modified-owner intervention works through the production caches;
-- peer invalidations work;
-- dirty evictions use the coherence transport;
-- the previous uncached-only synchronization restriction is no longer required for ordinary shared data;
-- all prior valid regressions continue to pass.
+- each core can execute `LR.W` and `SC.W`;
+- each core tracks one reservation;
+- reservations use 16-byte cache-block granularity;
+- `SC.W` succeeds only when the reservation remains valid;
+- successful `SC.W` performs one coherent word store and returns `0`;
+- failed `SC.W` performs no store and returns nonzero;
+- all `SC.W` attempts clear the reservation;
+- remote ownership acquisition, invalidation, eviction, and reset clear relevant reservations;
+- bare-metal spinlocks, barriers, and atomic counters work across all four cores;
+- all Milestone 1–5 regressions remain valid.
 
-This milestone is limited to MSI coherence correctness.
+This milestone implements only the minimum atomic functionality required for synchronization.
 
-Do not implement `LR.W`, `SC.W`, reservations, MESI, non-blocking caches, an L2, or later functionality.
+Do not implement the full RV32A extension.
 
 ## Required context
 
@@ -33,10 +35,11 @@ Before editing, read:
 - `docs/cache_architecture.md`
 - `docs/coherence_protocol.md`
 - `docs/bus_protocol.md`
+- `docs/lr_sc.md`
+- `docs/boot_and_runtime.md`
 - `docs/module_hierarchy.md`
 - `docs/interface_audit.md`
 - `docs/memory_map.md`
-- `docs/boot_and_runtime.md`
 - `docs/verification_plan.md`
 - `docs/performance_plan.md`
 - `docs/build_roadmap.md`
@@ -46,671 +49,734 @@ Before editing, read:
 - `docs/build_reports/milestone_2_private_l1i.md`
 - `docs/build_reports/milestone_3_private_noncoherent_l1d.md`
 - `docs/build_reports/milestone_4_snoopy_transport.md`
+- `docs/build_reports/milestone_5_msi_coherence.md`
 - relevant ADRs under `docs/architecture_decisions/`
-- current production L1D RTL
-- current coherence transport RTL and fixture tests
-- current shared memory, arbitration, runtime, and multicore tests
+- imported Sparrow-V decoder, execute, retirement, and DMEM-interface RTL
+- production coherent L1D RTL
+- coherence transport RTL
+- current bare-metal runtime and multicore tests
 
-Inspect the present repository state before changing files.
+Inspect the present repository state before making changes.
 
 Do not modify sibling repositories.
 
 Use targeted searches and concise command output.
 
-## Baseline coherence model
+## Baseline atomic model
 
-The production system uses:
+Implement only:
 
-- four private coherent L1D caches;
-- private non-coherent L1I caches;
-- snoopy MSI coherence;
-- one globally ordered coherence transaction at a time;
-- one shared round-robin coherence transport;
-- one shared SRAM;
-- write-back and write-allocate L1D behavior;
-- 16-byte cache blocks;
-- blocking caches;
-- one active processor/cache transaction per L1D;
-- no MSHRs;
-- no multiple outstanding coherence requests;
-- strongly ordered memory behavior.
+- `LR.W`
+- `SC.W`
 
-The stable L1D coherence states are:
+Each core has:
 
-- `I`: Invalid
-- `S`: Shared
-- `M`: Modified
+- one reservation-valid bit;
+- one reserved 16-byte cache-block address.
 
-The MSI state must become the authoritative representation of validity and dirtiness.
+Reservation granularity is one complete cache block, not one word.
 
-Preferred representation:
+This conservative granularity means a write to any word within the reserved block may invalidate the reservation.
 
-- `I` means invalid;
-- `S` means valid and clean;
-- `M` means valid and dirty.
+That behavior is acceptable and must be documented.
 
-Do not retain independent `valid` and `dirty` metadata as competing architectural sources of truth.
+## ISA and encoding
 
-Temporary internal bits are acceptable only where required for incomplete transactions and must be documented.
+Use the standard RISC-V RV32A encodings for:
 
-## Critical integration rule
+- `LR.W`
+- `SC.W`
 
-Milestone 4 transport behavior is already verified independently.
+Inspect the existing Sparrow-V decoder and instruction representation before implementing.
 
-Milestone 5 must connect the real L1D caches to that transport rather than recreating coherence behavior through a second path.
+Required behavior:
 
-The production request flow should become equivalent to:
+### `LR.W rd, (rs1)`
 
-```text
-Sparrow-V DMEM request
-        |
-Private coherent L1D
-        |
-Local hit or MSI coherence request
-        |
-Milestone 4 snoopy coherence transport
-        |
-Shared SRAM / peer intervention
-```
+- address comes from `rs1`;
+- `rs2` must be zero as required by the standard encoding;
+- performs a coherent aligned 32-bit load;
+- writes the loaded word to `rd`;
+- creates or replaces the core’s reservation for the containing 16-byte cache block.
 
-The L1D caches must use the canonical command definitions and requester/snooper interfaces already established.
+### `SC.W rd, rs2, (rs1)`
 
-Do not duplicate command encodings or create a parallel bus.
+- address comes from `rs1`;
+- store data comes from `rs2`;
+- checks the reservation;
+- on success:
+  - performs one coherent 32-bit store;
+  - writes `0` to `rd`;
+- on failure:
+  - performs no store;
+  - writes a nonzero value, preferably `1`, to `rd`;
+- clears the reservation regardless of success or failure.
 
-## Stable and transient states
+Do not implement:
 
-### Stable states
+- `AMOSWAP`;
+- `AMOADD`;
+- other AMO instructions;
+- `.D` variants;
+- acquire/release ordering optimizations beyond the strongly ordered baseline.
 
-Implement:
+The `aq` and `rl` bits may be accepted but do not require additional behavior because the system is already strongly ordered. Document this explicitly.
 
-- `I`
-- `S`
-- `M`
+## Alignment and error behavior
 
-### Required transient conditions
+`LR.W` and `SC.W` require naturally aligned word addresses.
 
-The cache is blocking but still requires explicit transient states or equivalent tracked transaction phases.
-
-At minimum support conditions equivalent to:
-
-- `IS`: invalid block waiting for `BUS_RD` and refill;
-- `IM`: invalid block waiting for `BUS_RDX` and refill;
-- `SM`: shared block waiting for `BUS_UPGR`;
-- `MI_WB`: modified victim waiting for writeback;
-- clean refill/installation;
-- modified-owner intervention response;
-- snoop invalidation acknowledgement;
-- processor-response completion.
-
-Additional transient states may be used where implementation clarity requires them.
-
-Do not collapse partial coherence transactions into ambiguous combinational conditions.
-
-Document the exact state machine.
-
-## Processor-triggered MSI behavior
-
-### Load hit in `S`
-
-- return the requested data;
-- remain in `S`;
-- update replacement state;
-- increment load-hit counters.
-
-### Load hit in `M`
-
-- return the requested data;
-- remain in `M`;
-- update replacement state;
-- increment load-hit counters.
-
-### Load miss in `I`
-
-1. Capture the processor request.
-2. Select an invalid way if available, otherwise select a victim.
-3. If the victim is in `M`, perform a full-block coherence `WRITEBACK`.
-4. Issue `BUS_RD` for the requested block.
-5. Accept data from modified-owner intervention or SRAM through the transport.
-6. Install the block in `S`.
-7. Return the requested word.
-8. Update replacement state and counters.
-
-Under MSI, a read miss installs in `S` even when no peer copy exists.
-
-Do not implement `E`.
-
-### Store hit in `M`
-
-- merge enabled bytes locally;
-- remain in `M`;
-- complete without a coherence transaction;
-- update replacement state;
-- increment store-hit counters.
-
-### Store hit in `S`
-
-1. Capture the store.
-2. Issue `BUS_UPGR`.
-3. Wait for required peer acknowledgements.
-4. Transition to `M`.
-5. Merge enabled bytes.
-6. Complete the processor request.
-
-No data refill is needed because the local `S` copy already contains the block.
-
-### Store miss in `I`
-
-1. Capture address, write data, and byte enables.
-2. Select a victim.
-3. If the victim is in `M`, perform full-block `WRITEBACK`.
-4. Issue `BUS_RDX`.
-5. Wait for peer invalidation acknowledgements.
-6. Receive authoritative block data from a modified owner or SRAM.
-7. Install the block in `M`.
-8. Merge the pending store.
-9. Complete the processor request.
-
-This is write-allocate behavior.
-
-## Snoop-triggered MSI behavior
-
-Each production L1D must inspect broadcast commands for the block address and respond through the Milestone 4 snooper interface.
-
-The requesting cache must not act as its own peer snooper.
-
-### Snoop `BUS_RD` while local state is `I`
-
-- report no copy;
-- provide no data;
-- remain in `I`.
-
-### Snoop `BUS_RD` while local state is `S`
-
-- report shared copy present;
-- provide no intervention data;
-- remain in `S`.
-
-### Snoop `BUS_RD` while local state is `M`
-
-- report modified ownership;
-- provide the full authoritative 16-byte block;
-- wait for required intervention acceptance;
-- transition from `M` to `S`;
-- ensure SRAM receives the same block through the transport;
-- clear modified ownership only after the intervention is safely accepted.
-
-### Snoop `BUS_RDX` while local state is `I`
-
-- report no copy;
-- acknowledge as required;
-- remain in `I`.
-
-### Snoop `BUS_RDX` while local state is `S`
-
-- report shared copy present;
-- acknowledge invalidation;
-- transition to `I`.
-
-### Snoop `BUS_RDX` while local state is `M`
-
-- report modified ownership;
-- provide the full authoritative 16-byte block;
-- acknowledge invalidation;
-- transition to `I` only after intervention data is accepted safely;
-- ensure SRAM receives the same intervention block.
-
-### Snoop `BUS_UPGR` while local state is `I`
-
-- acknowledge as required;
-- remain in `I`.
-
-### Snoop `BUS_UPGR` while local state is `S`
-
-- acknowledge invalidation;
-- transition to `I`.
-
-### Snoop `BUS_UPGR` while local state is `M`
-
-This is an illegal protocol condition under correct operation.
+Preserve Sparrow-V’s existing misalignment behavior.
 
 Requirements:
 
-- assert or flag a protocol error;
-- do not silently corrupt state;
-- document the behavior.
+- misaligned `LR.W` must not create a reservation;
+- misaligned `SC.W` must not perform a store;
+- misaligned `SC.W` must clear any existing reservation if it reaches SC execution;
+- invalid or unmapped behavior must remain consistent with existing Sparrow-V and memory-interface semantics;
+- do not invent a new trap model.
 
-## Local processor request versus snoop priority
+Document the exact observed behavior.
 
-Freeze and implement a deterministic conflict policy.
+## Core pipeline integration
+
+Integrate `LR.W` and `SC.W` into the existing Sparrow-V core with minimal disruption.
+
+Required integration points include:
+
+- decode;
+- operand selection;
+- memory-operation classification;
+- DMEM request generation;
+- response handling;
+- destination-register writeback;
+- retirement or trace reporting where applicable;
+- existing stall and backpressure logic.
+
+Preserve all existing scalar behavior.
+
+Do not fork the core into a separate atomic-only implementation unless absolutely necessary.
+
+Any imported Sparrow-V file modified in Sparrow-Cluster must remain clearly provenance-tracked.
+
+## Core-to-L1D atomic interface
+
+Extend the core-to-L1D request interface with explicit atomic intent.
+
+Preferred request metadata:
+
+- normal load;
+- normal store;
+- `LR.W`;
+- `SC.W`.
+
+Do not infer `SC.W` solely from ordinary store fields outside the core.
+
+The L1D must return enough information for the core to distinguish:
+
+- load data;
+- normal store completion;
+- successful `SC.W`;
+- failed `SC.W`.
+
+Keep the interface compact and documented.
+
+## Reservation storage
+
+Each core or its private L1D must maintain:
+
+- `reservation_valid`;
+- `reservation_block_addr`.
+
+Preferred ownership:
+
+- reservation tracking should live with the private coherent L1D because snoop invalidations and evictions are visible there;
+- the core should issue atomic operation type and receive success/failure.
+
+If another location is cleaner, document why and ensure all invalidation events are available there.
+
+The reserved address must be the 16-byte-aligned cache-block address.
+
+Only one reservation exists per core.
+
+A new `LR.W` replaces any previous reservation.
+
+## LR.W behavior
+
+For a valid aligned cacheable address:
+
+1. Perform a normal coherent word load.
+2. Complete all required MSI activity.
+3. Return the loaded word to the core.
+4. Set:
+   - reservation valid;
+   - reservation block address.
+5. Retire the instruction.
+
+The reservation must be created only after the coherent load completes successfully.
+
+`LR.W` may hit in `S` or `M`, or miss and issue `BUS_RD`.
+
+`LR.W` must not require `M` ownership.
+
+For uncached or MMIO addresses:
+
+- preferred baseline is to reject atomic reservation behavior;
+- do not create a reservation;
+- either follow documented unsupported/error behavior or fail conservatively;
+- do not claim atomicity for uncached MMIO.
+
+Document and test the chosen behavior.
+
+## SC.W success conditions
+
+`SC.W` succeeds only when all of the following are true:
+
+- reservation is valid;
+- requested block address matches the reserved block address;
+- address is aligned;
+- target is a supported cacheable address;
+- ownership required for the store is acquired coherently;
+- no invalidating event clears the reservation before the atomic store commits.
+
+A successful `SC.W` must:
+
+1. obtain or already hold `M`;
+2. perform the word store exactly once;
+3. return `0`;
+4. clear the reservation;
+5. retire only after the store is committed locally under MSI ownership.
+
+## SC.W failure behavior
+
+`SC.W` must fail when:
+
+- reservation is invalid;
+- reserved block does not match;
+- reservation was cleared by remote ownership acquisition;
+- reservation was cleared by snoop invalidation;
+- reservation was cleared by local eviction;
+- address is unsupported for atomic use;
+- another defined failure condition occurs.
+
+On failure:
+
+- do not issue a coherence ownership request solely for the failed store;
+- do not change cache data;
+- do not change SRAM;
+- return `1` or another documented nonzero value;
+- clear the reservation;
+- retire normally unless existing alignment/error behavior prevents it.
+
+A failed `SC.W` must have no memory side effect.
+
+## Reservation-clearing events
+
+Clear the reservation on:
+
+1. Any `SC.W` attempt, success or failure.
+2. Remote `BUS_RDX` for the reserved block.
+3. Remote `BUS_UPGR` for the reserved block.
+4. Any snoop event that invalidates the reserved local block.
+5. Local eviction of the reserved block.
+6. Local replacement of the reserved block.
+7. Reset.
+8. A new `LR.W`, which replaces the old reservation.
+9. Misaligned or unsupported `SC.W`, if it reaches SC execution.
+10. Any local event that makes the reserved block no longer resident or no longer safely reservable.
+
+For `BUS_RD`:
+
+- a remote read does not necessarily clear the reservation if the local block remains valid;
+- preserve the reservation across `M → S` downgrade only if the design can justify that the reservation remains valid;
+- otherwise clear conservatively and document the choice.
+
+Preferred conservative baseline:
+
+- clear the reservation on any snoop hit to the reserved block that changes local MSI state;
+- do not clear on a snoop miss to another block.
+
+## Reservation versus cache residency
+
+Freeze and document whether the reservation requires the block to remain resident.
 
 Preferred baseline:
 
-- an incoming accepted snoop has priority over starting a new processor-side cache action;
-- an already active local coherence transaction remains tracked until completion;
-- processor requests stall while the cache is servicing a conflicting snoop;
-- snoops to unrelated blocks may be serviced only if this can be done safely without violating the blocking-cache design;
-- otherwise apply backpressure or delay response through the existing snooper protocol.
+- reservation is valid only while the reserved block remains resident in the local L1D;
+- eviction or replacement clears it;
+- invalidation clears it;
+- a reservation does not survive cache loss.
 
-Do not claim general hit-under-snoop or concurrent lookup support unless explicitly implemented and verified.
+This is conservative and straightforward to verify.
 
-The chosen policy must avoid deadlock between:
+## Atomicity and coherence ordering
 
-- a cache waiting for transport completion;
-- the same cache being required to respond as a snooper;
-- multiple caches issuing ownership requests.
+Because the system has:
 
-Because only one global coherence transaction is active, reason carefully about whether a requesting cache can also have a separate local transient operation.
+- blocking caches;
+- one active processor memory transaction per core;
+- one globally ordered coherence transaction at a time;
+- strongly ordered memory behavior;
 
-Document the final priority and backpressure rules.
-
-## Replacement and eviction
-
-The cache remains 2-way set associative with one replacement bit per set.
-
-Victim selection remains:
-
-1. choose an invalid way if one exists;
-2. otherwise use the replacement bit.
-
-Victim behavior:
-
-- `I`: cannot be a valid resident victim;
-- `S`: replace without writeback;
-- `M`: issue full-block `WRITEBACK` before replacement.
-
-A clean shared block must not write back.
-
-A modified block must not be discarded without successful transport writeback.
-
-## Dirty-data authority
-
-When a block is in `M`:
-
-- the L1D copy is authoritative;
-- SRAM may be stale;
-- no other L1D may contain the block in `S` or `M`.
-
-When the `M` owner responds to `BUS_RD` or `BUS_RDX`:
-
-- the owner supplies the authoritative block;
-- the requester receives it;
-- SRAM receives the identical block;
-- state transition occurs only after safe data handoff.
-
-When a modified block is evicted:
-
-- use coherence `WRITEBACK`;
-- SRAM receives all four words;
-- completion occurs before replacement proceeds.
-
-## Shared-memory behavior after MSI
-
-Once MSI is correctly integrated, ordinary cacheable shared writable data may be used coherently.
-
-However:
-
-- uncached control/status apertures remain uncached;
-- hart-ID MMIO remains uncached;
-- simulation completion remains uncached;
-- strongly ordered control communication may remain uncached where simpler;
-- normal shared arrays, locks for future LR/SC, producer-consumer data, and false-sharing tests may use cacheable memory.
-
-Do not remove uncached support.
-
-Update software tests so coherent shared data is exercised directly.
-
-## Cacheable and uncached address policy
-
-Preserve the implemented Milestone 3 address decode unless a documented correction is required.
+the successful `SC.W` store must appear as one globally ordered coherent ownership operation plus one local store.
 
 Requirements:
 
-- cacheable SRAM accesses use MSI;
-- uncached/MMIO accesses bypass coherence and remain globally serialized;
-- uncached accesses do not allocate;
-- uncached accesses do not change MSI metadata;
-- coherence requests are not generated for uncached addresses;
-- existing hart-ID and completion behavior remains correct.
+- no other core may obtain `M` for the same block between final reservation validation and the successful store commit;
+- reservation validation and store completion must be tied to the same blocked L1D transaction;
+- do not validate in the core and later perform an unrelated normal store;
+- do not expose a race window between successful validation and data update.
 
-Test cacheable and uncached traffic concurrently.
+The L1D should make the final SC success decision.
 
-## Memory ordering
+## Interaction with MSI states
 
-Preserve the strong-ordering baseline:
+### LR.W in `I`
 
-- processor memory operations complete in program order;
-- one active L1D processor transaction per core;
-- coherence transactions are globally serialized;
-- store completion reflects successful ownership acquisition and local update;
-- a later load/store cannot bypass an incomplete earlier operation.
+- issue `BUS_RD`;
+- install in `S`;
+- return data;
+- set reservation.
 
-Do not claim RVWMO validation.
+### LR.W in `S`
+
+- return data;
+- remain `S`;
+- set reservation.
+
+### LR.W in `M`
+
+- return data;
+- remain `M`;
+- set reservation.
+
+### SC.W with valid reservation and local `M`
+
+- perform store locally;
+- remain `M`;
+- return success;
+- clear reservation.
+
+### SC.W with valid reservation and local `S`
+
+- issue `BUS_UPGR`;
+- wait for acknowledgements;
+- transition to `M`;
+- revalidate reservation at the defined commit point;
+- perform store;
+- return success;
+- clear reservation.
+
+### SC.W with valid reservation and local `I`
+
+Preferred baseline:
+
+- fail conservatively because reservation should have been cleared when the block became invalid.
+
+Do not silently reacquire with `BUS_RDX` and claim success unless the reservation semantics are carefully proven and documented.
+
+### SC.W with invalid or mismatched reservation
+
+- fail immediately;
+- no coherence transaction;
+- no store;
+- clear reservation.
+
+## Snoop interaction
+
+When a snoop targets a reserved block:
+
+### `BUS_RD`
+
+- service normal MSI behavior;
+- if local state changes `M → S`, apply the documented conservative reservation policy;
+- preferred baseline: clear reservation on the downgrade.
+
+### `BUS_RDX`
+
+- clear reservation;
+- service invalidation/intervention;
+- `SC.W` must subsequently fail.
+
+### `BUS_UPGR`
+
+- clear reservation;
+- service invalidation;
+- `SC.W` must subsequently fail.
+
+A snoop to another block must not clear the reservation.
+
+## Uncached and MMIO policy
+
+Do not support atomic reservations for:
+
+- hart-ID aperture;
+- control/status registers;
+- simulation completion;
+- uncached synchronization apertures;
+- other MMIO.
+
+Preferred behavior:
+
+- `LR.W` to uncached/MMIO does not establish a reservation;
+- `SC.W` to uncached/MMIO fails with no store;
+- normal uncached loads/stores remain unchanged.
+
+Document and test this behavior.
+
+## Runtime support
+
+Add a minimal bare-metal atomic runtime providing:
+
+- `lr.w` wrapper;
+- `sc.w` wrapper;
+- spinlock acquire;
+- spinlock release;
+- reusable barrier;
+- atomic increment;
+- optional compare-and-retry helper.
+
+Use standard LR/SC loops.
+
+Example conceptual lock acquisition:
+
+```text
+retry:
+    lr.w    old, (lock)
+    bnez    old, retry
+    li      new, 1
+    sc.w    status, new, (lock)
+    bnez    status, retry
+```
+
+Lock release may use a normal coherent store of zero under the strongly ordered baseline.
+
+Do not implement a scheduler or operating system.
+
+## Required software tests
+
+### Test 1 — Basic LR success
+
+- Core 0 executes `LR.W` on a cacheable word.
+- No interfering core accesses the block.
+- Core 0 executes `SC.W`.
+- `SC.W` returns `0`.
+- Stored value is observed.
+
+### Test 2 — SC without LR
+
+- Execute `SC.W` without a valid reservation.
+- It must return nonzero.
+- Memory must remain unchanged.
+
+### Test 3 — Address mismatch
+
+- `LR.W` one block.
+- `SC.W` a different block.
+- `SC.W` fails.
+- Neither target is incorrectly modified.
+
+### Test 4 — Remote invalidation failure
+
+- Core 0 executes `LR.W`.
+- Core 1 writes the reserved block and obtains ownership.
+- Core 0 executes `SC.W`.
+- It must fail.
+- Core 1’s value remains authoritative.
+
+### Test 5 — Remote upgrade failure
+
+- Core 0 and Core 1 share a block.
+- Core 0 executes `LR.W`.
+- Core 1 upgrades and writes.
+- Core 0’s `SC.W` fails.
+
+### Test 6 — Eviction failure
+
+- Core executes `LR.W`.
+- Force local same-set replacement of the reserved block.
+- `SC.W` fails.
+- No unintended write occurs.
+
+### Test 7 — Reservation replacement
+
+- Execute `LR.W` on block A.
+- Execute `LR.W` on block B.
+- `SC.W` to A fails.
+- `SC.W` to B follows the new reservation semantics.
+
+### Test 8 — SC clears reservation
+
+- Perform successful `LR.W`/`SC.W`.
+- Execute a second `SC.W` without another `LR.W`.
+- The second `SC.W` fails.
+
+Also test failed `SC.W` followed by another `SC.W`.
+
+### Test 9 — Byte-block granularity
+
+- Execute `LR.W` on one word.
+- Another core writes a different word in the same 16-byte block.
+- `SC.W` must fail.
+
+This confirms conservative cache-block-granularity reservations.
+
+### Test 10 — Spinlock
+
+All four cores repeatedly acquire one shared lock, update protected shared state, and release the lock.
+
+Verify:
+
+- mutual exclusion;
+- final shared state;
+- all four cores make progress;
+- no lost updates.
+
+### Test 11 — Atomic counter
+
+All four cores increment one shared counter using LR/SC loops.
+
+Use a deterministic iteration count.
+
+Verify the exact final value.
+
+### Test 12 — Barrier
+
+All four cores enter a reusable barrier implemented with LR/SC-protected state.
+
+Verify:
+
+- no core exits early;
+- all cores complete;
+- multiple barrier rounds work.
+
+### Test 13 — Producer-consumer with lock
+
+Use a lock-protected queue or shared payload.
+
+Verify coherent data visibility and correct synchronization.
+
+### Test 14 — Contention stress
+
+All four cores repeatedly contend on the same lock or counter.
+
+Record:
+
+- LR attempts;
+- SC attempts;
+- SC successes;
+- SC failures;
+- retry counts.
+
+## Directed RTL tests
+
+Add focused RTL-level tests for:
+
+- decode of `LR.W`;
+- decode of `SC.W`;
+- `rs2 == 0` requirement for `LR.W`;
+- correct destination-register writeback;
+- successful SC result `0`;
+- failed SC result nonzero;
+- no failed-SC memory request;
+- reservation set after completed LR;
+- reservation not set before LR completion;
+- reservation replacement;
+- reset clearing;
+- remote `BUS_RDX` clearing;
+- remote `BUS_UPGR` clearing;
+- local eviction clearing;
+- mismatched block failure;
+- same-block success;
+- same-block/different-word remote write failure;
+- uncached LR unsupported behavior;
+- uncached SC failure;
+- delayed `BUS_UPGR`;
+- delayed snoop invalidation;
+- simultaneous SC attempts from multiple cores.
+
+## Randomized atomic verification
+
+Add deterministic randomized LR/SC testing.
+
+Generate operations across four cores including:
+
+- LR;
+- matching SC;
+- mismatched SC;
+- ordinary loads;
+- ordinary stores;
+- remote conflicting stores;
+- evictions;
+- repeated contention;
+- uncached attempts where useful.
+
+Track a reference model containing:
+
+- architectural memory values;
+- each core’s reservation-valid state;
+- each core’s reserved block;
+- expected SC success or failure;
+- committed stores.
+
+Check:
+
+- every SC result;
+- no failed SC modifies memory;
+- every successful SC modifies exactly one word;
+- reservation clearing;
+- final memory state;
+- coherence ownership invariants.
+
+Use documented deterministic seeds.
+
+Keep default runtime practical.
 
 ## Counters
 
-Update or add per-core L1D coherence counters for:
+Add per-core atomic counters for:
 
-- accesses;
-- loads;
-- stores;
-- load hits in `S`;
-- load hits in `M`;
-- store hits in `M`;
-- store upgrades from `S`;
-- load misses;
-- store misses;
-- `BUS_RD` requests;
-- `BUS_RDX` requests;
-- `BUS_UPGR` requests;
-- writebacks;
-- snoop hits in `S`;
-- snoop hits in `M`;
-- interventions supplied;
-- invalidations received;
-- downgrades `M → S`;
-- ownership transfers `M → I`;
-- uncached accesses;
-- processor stall cycles due to coherence where practical.
+- `LR.W` attempts;
+- completed `LR.W`;
+- `SC.W` attempts;
+- successful `SC.W`;
+- failed `SC.W`;
+- failures due to no reservation;
+- failures due to address mismatch;
+- failures due to snoop invalidation;
+- failures due to eviction;
+- reservation clears;
+- lock or software retry counts where practical.
 
-Reuse Milestone 4 transport counters.
+At minimum verify:
+
+```text
+SC attempts = SC successes + SC failures
+```
 
 Document exact counting points.
 
-At minimum verify consistency relationships such as:
+## Assertions and invariants
 
-```text
-processor accesses = cacheable hits + cacheable misses + uncached accesses
-```
+Add assertions or equivalent checked invariants for:
 
-under the chosen definitions.
+### Reservation state
+
+- at most one reservation per core;
+- reserved address is 16-byte aligned;
+- reset clears reservation;
+- new LR replaces old reservation;
+- SC always clears reservation;
+- eviction of reserved block clears reservation;
+- invalidation of reserved block clears reservation;
+- snoop to unrelated block does not clear reservation.
+
+### SC correctness
+
+- successful SC requires valid matching reservation;
+- successful SC completes only while local cache owns `M`;
+- successful SC writes exactly once;
+- failed SC performs no store;
+- failed SC issues no unnecessary ownership transaction under the baseline policy;
+- SC result is `0` on success;
+- SC result is nonzero on failure;
+- no second SC may succeed without a new LR.
+
+### Coherence interaction
+
+- remote `BUS_RDX` to reserved block prevents later SC success;
+- remote `BUS_UPGR` to reserved block prevents later SC success;
+- no successful SC races with peer `M` ownership;
+- standard MSI global invariants remain true.
+
+### Liveness
+
+Under bounded fixed-latency assumptions:
+
+- accepted LR eventually completes;
+- accepted SC eventually returns success or failure;
+- lock contenders eventually make progress in directed fair tests;
+- no atomic transaction deadlocks the snoopy transport.
+
+Keep assertions compatible with Icarus.
 
 ## Explicit exclusions
 
 Do not implement:
 
-- MESI or `E` state;
-- MOESI or `O` state;
-- `LR.W`;
-- `SC.W`;
-- reservation tracking;
-- atomic operations;
-- MSHRs;
-- hit-under-miss;
+- AMO instructions;
+- full RV32A;
+- 64-bit atomics;
+- word-granularity reservations;
+- multiple reservations per core;
+- reservation sets shared between cores;
+- MESI;
 - non-blocking caches;
-- multiple outstanding coherence transactions;
+- MSHRs;
 - store buffers;
-- speculative loads;
-- hardware prefetching;
-- an L2 cache;
+- speculative atomics;
+- weak-memory-model fences beyond current behavior;
+- an operating system;
+- interrupts for synchronization;
+- L2;
 - directory coherence;
-- crossbar or NoC;
-- coherent L1I;
-- self-modifying code;
 - coherent DMA;
-- SparrowML multicore integration;
+- SparrowML integration;
 - FPGA deployment;
 - ASIC physical evaluation.
 
-Do not begin Milestone 6.
+Do not begin Milestone 7.
 
 ## Functional requirements
 
-The production system must demonstrate:
+The implementation must demonstrate:
 
-1. Four coherent private L1D caches.
-2. MSI state per resident cache block.
-3. `I`, `S`, and `M` as authoritative validity/dirty state.
-4. Load hits in `S`.
-5. Load hits in `M`.
-6. Store hits in `M`.
-7. `I → S` through `BUS_RD`.
-8. `I → M` through `BUS_RDX`.
-9. `S → M` through `BUS_UPGR`.
-10. `M → S` on remote `BUS_RD`.
-11. `M → I` on remote `BUS_RDX`.
-12. `S → I` on remote `BUS_RDX`.
-13. `S → I` on remote `BUS_UPGR`.
-14. Modified-owner intervention through production L1D.
-15. SRAM update with intervention data.
-16. Dirty eviction through coherence `WRITEBACK`.
-17. Clean shared eviction without writeback.
-18. Correct byte, halfword, and word stores.
-19. Correct shared writable communication.
-20. Correct simultaneous requests and arbitration.
-21. Continued private L1I operation.
-22. Continued uncached/MMIO operation.
-23. No simultaneous `M` owners.
-24. No `S` copy while another cache holds `M`.
-25. No lost or stale committed writes.
-26. Accurate coherence counters.
+1. Standard RV32 `LR.W` decoding.
+2. Standard RV32 `SC.W` decoding.
+3. Correct register writeback.
+4. One reservation per core.
+5. 16-byte reservation granularity.
+6. Reservation set only after completed LR.
+7. Matching SC success.
+8. SC-without-LR failure.
+9. Mismatched-address SC failure.
+10. SC clears reservation on success.
+11. SC clears reservation on failure.
+12. Remote `BUS_RDX` clears reservation.
+13. Remote `BUS_UPGR` clears reservation.
+14. Local eviction clears reservation.
+15. Reset clears reservation.
+16. New LR replaces old reservation.
+17. Failed SC has no memory side effect.
+18. Successful SC stores exactly once.
+19. Successful SC owns `M`.
+20. LR/SC through `S → M` upgrade works.
+21. Same-block different-word remote write causes failure.
+22. Uncached/MMIO atomic attempts follow the documented unsupported policy.
+23. Four-core spinlock works.
+24. Four-core atomic counter works.
+25. Reusable barrier works.
+26. Contention stress works.
+27. Randomized reference-model testing passes.
+28. All MSI coherence invariants remain valid.
+29. All previous regressions pass.
+30. Atomic counters are consistent.
 
 ## Verification requirements
 
-Verification is the main deliverable of this milestone.
+Add and run:
 
-### MSI unit tests
+- focused core decode tests;
+- focused reservation/L1D tests;
+- directed four-core LR/SC tests;
+- multicore software lock tests;
+- atomic counter test;
+- reusable barrier test;
+- contention stress;
+- deterministic randomized atomic verification;
+- all Milestone 1–5 regressions.
 
-Add focused tests covering every stable transition.
-
-#### Processor-side transitions
-
-- reset to `I`;
-- load miss `I → S`;
-- load hit in `S`;
-- store miss `I → M`;
-- store hit in `M`;
-- store hit `S → M` through `BUS_UPGR`;
-- modified victim writeback before replacement;
-- shared victim replacement without writeback;
-- byte store in `M`;
-- halfword store in `M`;
-- word store in `M`;
-- write-allocate store miss;
-- delayed coherence response;
-- delayed acknowledgement;
-- reset invalidation.
-
-#### Snoop transitions
-
-- `I + BUS_RD → I`;
-- `S + BUS_RD → S`;
-- `M + BUS_RD → S` with intervention;
-- `I + BUS_RDX → I`;
-- `S + BUS_RDX → I`;
-- `M + BUS_RDX → I` with intervention;
-- `I + BUS_UPGR → I`;
-- `S + BUS_UPGR → I`;
-- illegal `M + BUS_UPGR` detection.
-
-### Directed four-core coherence tests
-
-Add named scenarios for:
-
-1. Core 0 reads a cold block.
-2. Core 0 and Core 1 both read the same block.
-3. Four cores read the same block.
-4. Core 0 writes a cold block.
-5. Core 0 writes, then Core 1 reads.
-6. Core 0 writes, then Core 1 writes.
-7. Core 0 and Core 1 share, then Core 1 upgrades.
-8. Four readers share, then one writer invalidates the others.
-9. Modified owner is remotely read.
-10. Modified owner is remotely replaced by a writer.
-11. Two cores repeatedly alternate writes to one block.
-12. Dirty owner evicts a block.
-13. Shared clean block is evicted.
-14. Independent blocks remain independent.
-15. Byte/halfword/word writes are remotely observed.
-16. Concurrent requests from all four cores.
-17. L1I refill traffic contends below coherence traffic.
-18. Uncached/MMIO traffic contends below coherence traffic.
-
-For every directed test, validate:
-
-- returned data;
-- final SRAM value where expected;
-- each cache’s final MSI state;
-- expected transport command sequence;
-- no illegal ownership combination.
-
-### Randomized coherence test
-
-Create a randomized four-core coherence test using a software or testbench reference model.
-
-Generate operations such as:
-
-- aligned loads;
-- byte, halfword, and word stores;
-- repeated accesses to shared blocks;
-- accesses to independent blocks;
-- same-set conflicts;
-- forced evictions;
-- ownership ping-pong;
-- uncached operations where useful.
-
-Use constrained address ranges small enough to track all cache-block states.
-
-The reference model must check:
-
-- each completed load value;
-- final architectural memory value;
-- successful store ordering;
-- ownership invariants;
-- absence of lost writes.
-
-Use deterministic seeds and report them.
-
-Run enough seeds and operations to provide meaningful coverage without making the default regression excessively slow.
-
-### Software and litmus tests
-
-Adapt or add bare-metal tests for coherent shared writable memory.
-
-Required programs:
-
-#### Shared producer-consumer
-
-- one core writes data into a cacheable shared block;
-- publishes a flag through a safe ordered mechanism;
-- another core reads the updated data;
-- expected value must be observed.
-
-Until LR/SC exists, use single-writer flags and deterministic ownership.
-
-#### Shared writable array
-
-- multiple cores read and write assigned or communicated cacheable blocks;
-- at least one block changes ownership between cores;
-- final values are checked.
-
-#### Ownership ping-pong
-
-- two cores alternately write a cacheable word using deterministic turn-taking;
-- turn variable may remain uncached if needed;
-- shared data word must be cacheable;
-- verify repeated `M` ownership transfer.
-
-#### False-sharing benchmark
-
-- two or more cores update different words in the same 16-byte block;
-- compare against updates to different blocks;
-- verify correctness;
-- record coherence transaction counts;
-- do not require performance conclusions yet.
-
-#### Shared read-mostly data
-
-- all cores read common cacheable data;
-- verify expected shared-state behavior and low write traffic.
-
-### Existing regression preservation
-
-All valid Milestone 1–4 tests must continue to pass.
-
-Update Milestone 3 tests that intentionally demonstrated incoherence:
-
-- preserve a historical or documentation-only non-coherence demonstration if useful;
-- do not retain it as expected production behavior;
-- replace production expectations with coherent results.
-
-Do not weaken previous cache, memory, transport, or software checks.
-
-## Coherence invariants and assertions
-
-Add assertions or equivalent checked invariants for:
-
-### Global ownership
-
-For every tracked block in verification:
-
-- at most one cache may hold `M`;
-- if any cache holds `M`, every other cache must hold `I`;
-- multiple `S` copies are allowed;
-- `S` and `M` may not coexist for the same block.
-
-### Local state correctness
-
-- `I` cannot satisfy a processor hit;
-- `S` cannot be locally modified without successful upgrade;
-- a cache may complete a store only in `M`;
-- modified data cannot be discarded;
-- shared clean eviction causes no writeback;
-- refill installation uses a legal target way;
-- only valid stable states satisfy hits.
-
-### Transaction correctness
-
-- `BUS_RD` is used for read miss;
-- `BUS_RDX` is used for write miss;
-- `BUS_UPGR` is used for store hit in `S`;
-- requester state transition occurs only after transport completion;
-- invalidation acknowledgement is not sent before required local action;
-- intervention data equals local modified block contents;
-- state `M → S` or `M → I` occurs only after safe intervention acceptance;
-- no stale SRAM data is selected over modified-owner data;
-- processor response occurs exactly once;
-- one local processor transaction is active at most;
-- no second coherence request is issued before the first completes.
-
-### Liveness
-
-Using bounded assumptions compatible with fixed-latency simulation:
-
-- an accepted local request eventually completes;
-- an accepted coherence request eventually completes unless a deliberate timeout test is active;
-- snoop response is produced within the supported bounded interval;
-- no requester is permanently starved.
-
-### Counters
-
-- counter increments occur once per defined event;
-- accesses reconcile with hits, misses, and uncached accesses;
-- intervention count matches supplied modified-owner responses in directed tests.
-
-Keep assertions compatible with Icarus.
-
-## Coverage expectations
-
-Track functional coverage manually or through counters for:
-
-- every processor-triggered stable transition;
-- every snoop-triggered stable transition;
-- every coherence command;
-- intervention from each of the four cores;
-- invalidation of each of the four cores;
-- two, three, and four shared copies;
-- dirty eviction;
-- clean eviction;
-- byte, halfword, and word writes;
-- same-set conflicts;
-- ownership transfer;
-- arbitration grant to each core;
-- false sharing;
-- uncached/coherent contention.
-
-A formal coverage tool is not required.
-
-Provide a concise coverage matrix in the Milestone 5 build report.
+Do not weaken MSI verification.
 
 ## Documentation updates
 
@@ -721,10 +787,11 @@ Update:
 - `docs/cache_architecture.md`
 - `docs/coherence_protocol.md`
 - `docs/bus_protocol.md`
+- `docs/lr_sc.md`
+- `docs/boot_and_runtime.md`
 - `docs/module_hierarchy.md`
 - `docs/interface_audit.md`
 - `docs/memory_map.md`
-- `docs/boot_and_runtime.md`
 - `docs/verification_plan.md`
 - `docs/performance_plan.md`
 - `docs/build_roadmap.md`
@@ -733,24 +800,25 @@ Update:
 
 Create:
 
-- `docs/build_reports/milestone_5_msi_coherence.md`
+- `docs/build_reports/milestone_6_lr_sc.md`
 
 The build report must record:
 
-- production MSI state encoding;
-- transient states;
-- processor transition table;
-- snoop transition table;
-- local-versus-snoop priority;
-- deadlock-avoidance reasoning;
-- eviction and intervention behavior;
-- cacheable/uncached policy;
-- counters;
+- ISA encoding and decode integration;
+- core/L1D atomic interface;
+- reservation storage location;
+- reservation granularity;
+- reservation-clearing events;
+- LR behavior;
+- SC success/failure decision point;
+- MSI interaction;
+- uncached/MMIO policy;
+- runtime primitives;
 - directed tests;
-- randomized test seeds and operation counts;
-- software tests;
-- invariant checks;
-- coverage matrix;
+- randomized seeds and operation counts;
+- lock/counter/barrier results;
+- counter definitions;
+- assertions;
 - measured results;
 - known limitations;
 - deliberately absent functionality.
@@ -775,6 +843,8 @@ make sim-l1d
 make sim-snoop-transport
 make sim-msi
 make sim-coherence-random
+make sim-lrsc
+make sim-atomic-random
 make sim-cluster
 make sim-multicore
 make regress
@@ -784,52 +854,50 @@ git status --short
 
 Target intent:
 
-- `make sim-unit`: all focused unit tests through Milestone 5.
-- `make sim-l1i`: existing L1I regression.
-- `make sim-l1d`: local cache behavior and MSI L1D tests.
-- `make sim-snoop-transport`: independent Milestone 4 transport regression.
-- `make sim-msi`: directed production coherence tests.
-- `make sim-coherence-random`: deterministic randomized coherence/model test.
-- `make sim-cluster`: four-core integrated hardware test.
-- `make sim-multicore`: bare-metal coherent shared-memory software tests.
-- `make regress`: complete regression through Milestone 5.
+- `make sim-unit`: focused units through Milestone 6.
+- `make sim-lrsc`: directed LR/SC decode, reservation, and multicore atomic tests.
+- `make sim-atomic-random`: deterministic randomized atomic/reference-model tests.
+- `make sim-multicore`: bare-metal spinlock, counter, barrier, and synchronization tests.
+- `make regress`: complete regression through Milestone 6.
 
-Do not make `make check` invoke the full simulation regression.
+Do not make `make check` invoke the full regression.
 
 ## Completion gate
 
-Milestone 5 is complete only when all of the following are true:
+Milestone 6 is complete only when:
 
-- all four production L1D caches connect to the snoopy coherence transport;
-- each resident block uses authoritative MSI state;
-- `I`, `S`, and `M` behavior is implemented;
-- all required transient states or equivalent transaction tracking are implemented;
-- read miss `I → S` works;
-- write miss `I → M` works;
-- store upgrade `S → M` works;
-- local load hits in `S` and `M` work;
-- local store hit in `M` works;
-- remote read causes `M → S` intervention;
-- remote ownership request causes `M → I` intervention;
-- `S → I` invalidation works for `BUS_RDX`;
-- `S → I` invalidation works for `BUS_UPGR`;
-- dirty eviction uses full-block `WRITEBACK`;
-- clean shared eviction does not write back;
-- modified-owner data reaches requester and SRAM identically;
-- stale SRAM data is never selected when an `M` owner exists;
-- no block has more than one `M` owner;
-- no `S` copy coexists with `M`;
-- cacheable shared writable software works correctly;
-- ownership ping-pong works;
-- false-sharing test remains correct and records coherence traffic;
-- byte, halfword, and word remote visibility is verified;
-- simultaneous four-core coherence requests are verified;
-- randomized coherence tests pass for documented seeds;
-- reference-model load checking passes;
-- all required assertions and invariants pass;
-- L1I and uncached/MMIO behavior remain correct;
-- all prior valid regressions pass;
-- counters are tested and consistent;
+- `LR.W` and `SC.W` use the intended standard RV32 encodings;
+- core decode and writeback are correct;
+- each core has one reservation;
+- reservations use 16-byte cache-block granularity;
+- LR sets reservation only after coherent load completion;
+- matching SC can succeed;
+- SC without LR fails;
+- mismatched SC fails;
+- every SC clears reservation;
+- new LR replaces old reservation;
+- remote `BUS_RDX` clears reservation;
+- remote `BUS_UPGR` clears reservation;
+- local eviction clears reservation;
+- reset clears reservation;
+- failed SC performs no memory write;
+- successful SC performs exactly one coherent word store;
+- successful SC returns `0`;
+- failed SC returns nonzero;
+- successful SC commits only while owning `M`;
+- LR in `I`, `S`, and `M` is verified;
+- SC from local `M` is verified;
+- SC requiring `S → M` upgrade is verified;
+- uncached/MMIO atomic policy is tested and documented;
+- cache-block-granularity conflict is verified;
+- all four cores pass spinlock tests;
+- atomic counter reaches its exact expected value;
+- reusable barrier completes multiple rounds;
+- contention stress completes;
+- randomized atomic reference-model tests pass for documented seeds;
+- MSI coherence invariants remain valid;
+- atomic counters reconcile;
+- all Milestone 1–5 regressions pass;
 - required documentation matches implementation;
 - `make check` passes;
 - `make docs-check` passes;
@@ -839,21 +907,23 @@ Milestone 5 is complete only when all of the following are true:
 - `make sim-snoop-transport` passes;
 - `make sim-msi` passes;
 - `make sim-coherence-random` passes;
+- `make sim-lrsc` passes;
+- `make sim-atomic-random` passes;
 - `make sim-cluster` passes;
 - `make sim-multicore` passes;
 - `make regress` passes;
-- no LR/SC, MESI, L2, non-blocking cache, or Milestone 6 functionality has been added;
+- no AMO, MESI, L2, non-blocking cache, SparrowML, or Milestone 7 functionality has been added;
 - `reports/current_milestone_report.md` identifies this exact milestone and contains `STATUS: COMPLETE`.
 
 Use `STATUS: BLOCKED` only for a genuine external, architectural, or toolchain blocker that prevents further progress.
 
 If required work remains but can still be implemented, use `STATUS: IN_PROGRESS` and continue iterating.
 
-Do not mark complete based only on directed tests. Randomized reference-model verification and software-level shared-memory tests are required.
+Do not mark complete based only on one successful LR/SC sequence. Multicore contention, failure paths, and randomized checking are required.
 
 ## Completion report
 
-Use this exact structure in `reports/current_milestone_report.md` and the final Codex response:
+Use this exact structure:
 
 ```text
 STATUS:
@@ -876,17 +946,17 @@ NEXT RECOMMENDED MILESTONE:
 
 Include concrete results such as:
 
-- directed MSI scenarios passed;
+- directed LR/SC scenarios passed;
 - randomized seeds and operation counts;
-- cores completing;
-- `BUS_RD`, `BUS_RDX`, `BUS_UPGR`, and writeback counts;
-- interventions and invalidations;
-- final MSI state checks;
-- byte/halfword/word remote visibility;
-- ownership ping-pong iterations;
-- false-sharing traffic comparison;
+- LR attempts;
+- SC attempts, successes, and failures;
+- reservation invalidations;
+- spinlock iterations;
+- atomic-counter expected and observed values;
+- barrier rounds;
+- contention retries;
 - regression commands passed;
 - known Icarus warnings;
 - remaining deliberate limitations.
 
-Do not paste complete source files or documentation into the final response.
+Do not paste complete source files or documentation.
